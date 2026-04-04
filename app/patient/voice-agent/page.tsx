@@ -39,9 +39,14 @@ export default function PatientVoiceAgentPage() {
   const [agentState, setAgentState] = useState<"idle" | "listening" | "speaking">("idle");
   const [level, setLevel] = useState(0);
   const [agentConnected, setAgentConnected] = useState(false);
+  const agentConnectedRef = useRef(false);
+  const [agentIdentity, setAgentIdentity] = useState<string | null>(null);
+  const [participantsCount, setParticipantsCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [tokenCard, setTokenCard] = useState<any>(null);
   const [summaryCard, setSummaryCard] = useState<string | null>(null);
+  const [needsAudioStart, setNeedsAudioStart] = useState(false);
+  const connectTimeoutRef = useRef<number | null>(null);
 
   const bars = useMemo(() => Array.from({ length: 14 }, () => 10), []);
   const [barHeights, setBarHeights] = useState<number[]>(bars);
@@ -49,6 +54,7 @@ export default function PatientVoiceAgentPage() {
   useEffect(() => {
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (connectTimeoutRef.current) window.clearTimeout(connectTimeoutRef.current);
       analyserRef.current?.disconnect();
       audioCtxRef.current?.close();
       roomRef.current?.disconnect();
@@ -103,6 +109,9 @@ export default function PatientVoiceAgentPage() {
   const attachAgentAudio = (track: RemoteAudioTrack) => {
     if (!agentAudioRef.current) return;
     track.attach(agentAudioRef.current);
+    agentAudioRef.current.muted = false;
+    agentAudioRef.current.volume = 1;
+    agentAudioRef.current.play().catch(() => null);
     setupAnalyser(track);
   };
 
@@ -112,6 +121,7 @@ export default function PatientVoiceAgentPage() {
     setError(null);
     setTokenCard(null);
     setSummaryCard(null);
+    setNeedsAudioStart(false);
 
     try {
       const patientId = localStorage.getItem("abha_patient_id") || "patient";
@@ -130,6 +140,11 @@ export default function PatientVoiceAgentPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ roomName }),
+      }).then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data?.error || "Failed to dispatch LiveKit agent.");
+        }
       });
 
       const room = new Room();
@@ -144,8 +159,14 @@ export default function PatientVoiceAgentPage() {
           attachAgentAudio(track as RemoteAudioTrack);
           if (participant.identity !== room.localParticipant.identity) {
             setAgentConnected(true);
+            agentConnectedRef.current = true;
+            setAgentIdentity(participant.identity);
           }
         }
+      });
+
+      room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        setNeedsAudioStart(!room.canPlaybackAudio);
       });
 
       room.on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
@@ -153,8 +174,28 @@ export default function PatientVoiceAgentPage() {
           track.detach();
           if (participant.identity !== room.localParticipant.identity) {
             setAgentConnected(false);
+            agentConnectedRef.current = false;
+            setAgentIdentity(null);
           }
         }
+      });
+
+      room.on(RoomEvent.ParticipantConnected, (participant) => {
+        if (participant.identity !== room.localParticipant.identity) {
+          setAgentConnected(true);
+          agentConnectedRef.current = true;
+          setAgentIdentity(participant.identity);
+        }
+        setParticipantsCount((room.participants?.size ?? 0) + 1);
+      });
+
+      room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+        if (participant.identity !== room.localParticipant.identity) {
+          setAgentConnected(false);
+          agentConnectedRef.current = false;
+          setAgentIdentity(null);
+        }
+        setParticipantsCount((room.participants?.size ?? 0) + 1);
       });
 
       room.on(RoomEvent.LocalTrackPublished, (publication) => {
@@ -165,9 +206,20 @@ export default function PatientVoiceAgentPage() {
 
       await room.connect(payload.url, payload.token);
       await room.localParticipant.setMicrophoneEnabled(true);
+      setParticipantsCount((room.participants?.size ?? 0) + 1);
+      if (!room.canPlaybackAudio) {
+        room.startAudio().catch(() => setNeedsAudioStart(true));
+      }
 
       setStatus("live");
       setAgentState("listening");
+
+      if (connectTimeoutRef.current) window.clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = window.setTimeout(() => {
+        if (!agentConnectedRef.current) {
+          setError("Agent did not connect. Ensure agents/agent.py is running and LIVEKIT_* keys match.");
+        }
+      }, 8000);
 
       const summaryRes = await fetch(`/api/agent/patient-summary`, {
         method: "POST",
@@ -193,6 +245,9 @@ export default function PatientVoiceAgentPage() {
     setStatus("idle");
     setAgentState("idle");
     setAgentConnected(false);
+    agentConnectedRef.current = false;
+    setNeedsAudioStart(false);
+    if (connectTimeoutRef.current) window.clearTimeout(connectTimeoutRef.current);
   };
 
   return (
@@ -220,6 +275,15 @@ export default function PatientVoiceAgentPage() {
                 {status === "live" ? "Live" : status === "connecting" ? "Connecting" : "Idle"}
               </span>
             </div>
+            <div className="flex items-center justify-between text-xs text-[color:var(--text-secondary)]">
+              <span>Participants</span>
+              <span>{participantsCount}</span>
+            </div>
+            {agentIdentity && (
+              <div className="text-xs text-[color:var(--text-secondary)]">
+                Agent: {agentIdentity}
+              </div>
+            )}
 
             <div className="relative grid place-items-center rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-8">
               <div className="absolute inset-6 rounded-full bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.35),transparent_60%)]" />
@@ -247,6 +311,14 @@ export default function PatientVoiceAgentPage() {
               <Button variant="secondary" onClick={stopVoice} disabled={status === "idle"}>
                 Stop Agent
               </Button>
+              {needsAudioStart && (
+                <Button
+                  variant="secondary"
+                  onClick={() => roomRef.current?.startAudio().catch(() => null)}
+                >
+                  Enable Audio
+                </Button>
+              )}
             </div>
 
             {error && (
@@ -255,7 +327,7 @@ export default function PatientVoiceAgentPage() {
               </div>
             )}
 
-            <audio ref={agentAudioRef} className="hidden" />
+            <audio ref={agentAudioRef} className="hidden" autoPlay playsInline />
           </CardContent>
         </Card>
 

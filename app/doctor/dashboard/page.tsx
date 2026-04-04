@@ -32,6 +32,8 @@ export default function DoctorDashboardPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const scanRafRef = useRef<number | null>(null);
   const [scannerError, setScannerError] = useState<string | null>(null);
+  const lastEmergencyRef = useRef<number>(Date.now());
+  const lastEmergencyIdRef = useRef<string | null>(null);
 
   const handleScan = () => {
     try {
@@ -166,9 +168,17 @@ export default function DoctorDashboardPage() {
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "emergency_alerts" },
           (payload) => {
-            setEmergency(payload.new);
-            if (payload.new?.patient_id) {
-              fetchPatient(payload.new.patient_id);
+            const createdAt = payload.new?.created_at ? new Date(payload.new.created_at).getTime() : Date.now();
+            const id = payload.new?.id ? String(payload.new.id) : null;
+            if (createdAt >= lastEmergencyRef.current && id !== lastEmergencyIdRef.current) {
+              lastEmergencyRef.current = createdAt;
+              lastEmergencyIdRef.current = id;
+              setEmergency(payload.new);
+              if (payload.new?.created_by === "other") {
+                setEmergencyPatient(null);
+              } else if (payload.new?.patient_id) {
+                fetchPatient(payload.new.patient_id);
+              }
             }
           }
         )
@@ -178,9 +188,17 @@ export default function DoctorDashboardPage() {
         const res = await fetch("/api/emergency/latest");
         if (!res.ok) return;
         const data = await res.json();
-        setEmergency(data);
-        if (data?.patient_id) {
-          fetchPatient(data.patient_id);
+        const createdAt = data?.created_at ? new Date(data.created_at).getTime() : 0;
+        const id = data?.id ? String(data.id) : null;
+        if (createdAt > lastEmergencyRef.current && id !== lastEmergencyIdRef.current) {
+          lastEmergencyRef.current = createdAt;
+          lastEmergencyIdRef.current = id;
+          setEmergency(data);
+          if (data?.created_by === "other") {
+            setEmergencyPatient(null);
+          } else if (data?.patient_id) {
+            fetchPatient(data.patient_id);
+          }
         }
       }, 6000);
     }
@@ -476,6 +494,7 @@ export default function DoctorDashboardPage() {
                   onClick={() => {
                     setEmergency(null);
                     setEmergencyPatient(null);
+                    lastEmergencyRef.current = Date.now();
                   }}
                   className="rounded-full border border-[color:var(--border)] p-1"
                   aria-label="Close"
@@ -491,7 +510,7 @@ export default function DoctorDashboardPage() {
                   Symptoms: {emergency.symptoms}
                 </div>
               )}
-              {emergencyPatient && (
+              {emergencyPatient && emergency?.created_by !== "other" && (
                 <div className="mt-3 rounded-2xl border border-[color:var(--border)] bg-[color:var(--elevated)] p-3 text-xs">
                   <div className="text-sm font-semibold text-[color:var(--text-primary)]">
                     {emergencyPatient.name || "Patient"} ({emergencyPatient.age || "--"} - {emergencyPatient.gender || "--"})
@@ -526,7 +545,14 @@ export default function DoctorDashboardPage() {
               {emergency.location && (
                 <div className="mt-3 flex items-center gap-2 text-xs text-[color:var(--text-secondary)]">
                   <MapPin size={12} />
-                  {emergency.location}
+                  <a
+                    href={`https://www.google.com/maps?q=${encodeURIComponent(emergency.location)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[color:var(--accent-secondary)] hover:underline"
+                  >
+                    Open location in Google Maps
+                  </a>
                 </div>
               )}
               <div className="mt-3 flex flex-wrap gap-2">

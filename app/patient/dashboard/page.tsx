@@ -55,24 +55,39 @@ export default function PatientDashboardPage() {
   const [medicineImageName, setMedicineImageName] = useState("");
   const [reportStatus, setReportStatus] = useState("");
   const [medicineStatus, setMedicineStatus] = useState("");
+  const [medicineInfo, setMedicineInfo] = useState<{ medicine?: string; strength?: string; form?: string } | null>(null);
+  const [recordStatus, setRecordStatus] = useState("");
   const [priceResults, setPriceResults] = useState<any[]>([]);
   const [medicineLabel, setMedicineLabel] = useState("");
   const [emergencyOtherState, setEmergencyOtherState] = useState<"idle" | "recording" | "processing">("idle");
   const [emergencyOtherStatus, setEmergencyOtherStatus] = useState("");
   const emergencyRecorderRef = useRef<MediaRecorder | null>(null);
   const emergencyChunksRef = useRef<Blob[]>([]);
+  const [patientId, setPatientId] = useState<string>("");
+  const telegramBot = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "";
+  const helperLink = telegramBot && patientId ? `https://t.me/${telegramBot}?start=${patientId}` : "";
+  const [helperLinkStatus, setHelperLinkStatus] = useState("");
 
   useEffect(() => {
-    const patientId = localStorage.getItem("abha_patient_id") || "";
-    if (!patientId) {
-      setLoadingProfile(false);
-      return;
-    }
-    fetch(`/api/patient/summary?patientId=${patientId}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setPatient(data))
-      .catch(() => setPatient(null))
-      .finally(() => setLoadingProfile(false));
+    const loadSummary = async () => {
+      const patientId = localStorage.getItem("abha_patient_id") || "";
+      setPatientId(patientId);
+      if (!patientId) {
+        setLoadingProfile(false);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/patient/summary?patientId=${patientId}`);
+        const data = res.ok ? await res.json() : null;
+        setPatient(data);
+      } catch {
+        setPatient(null);
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+
+    loadSummary();
   }, []);
 
   useEffect(() => {
@@ -127,7 +142,7 @@ export default function PatientDashboardPage() {
         navigator.geolocation.getCurrentPosition(
           (pos) => resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`),
           () => resolve(""),
-          { enableHighAccuracy: true }
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
         );
       });
 
@@ -192,14 +207,14 @@ export default function PatientDashboardPage() {
           const patientId = localStorage.getItem("abha_patient_id") || "";
           formData.append("patientId", patientId);
 
-          const location = await new Promise<string>((resolve) => {
-            if (!navigator.geolocation) return resolve("");
-            navigator.geolocation.getCurrentPosition(
-              (pos) => resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`),
-              () => resolve(""),
-              { enableHighAccuracy: true }
-            );
-          });
+      const location = await new Promise<string>((resolve) => {
+        if (!navigator.geolocation) return resolve("");
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`),
+          () => resolve(""),
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+        );
+      });
           formData.append("location", location);
 
           const response = await fetch("/api/emergency/other", {
@@ -247,12 +262,53 @@ export default function PatientDashboardPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Upload failed.");
       setReportStatus("Report uploaded.");
+      fetch(`/api/patient/summary?patientId=${patientId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((payload) => setPatient(payload))
+        .catch(() => null);
     } catch (err: any) {
       setReportStatus(err?.message || "Upload failed.");
     }
   };
 
-  const handleMedicineAnalyze = async () => {
+  const handleDeleteRecord = async (type: "summary" | "report", recordId: string) => {
+    setRecordStatus("");
+    try {
+      const patientId = localStorage.getItem("abha_patient_id") || "";
+      if (!patientId) throw new Error("Patient profile missing.");
+      const action = type === "summary" ? "delete_summary" : "delete_report";
+      const res = await fetch("/api/patient/privacy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          patientId,
+          ...(type === "summary" ? { summaryId: recordId } : { reportId: recordId }),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Delete failed.");
+
+      setPatient((prev: any) => {
+        if (!prev) return prev;
+        if (type === "summary") {
+          return {
+            ...prev,
+            summaries: (prev.summaries || []).filter((item: any) => String(item.id) !== String(recordId)),
+          };
+        }
+        return {
+          ...prev,
+          reports: (prev.reports || []).filter((item: any) => String(item.id) !== String(recordId)),
+        };
+      });
+      setRecordStatus("Record deleted.");
+    } catch (err: any) {
+      setRecordStatus(err?.message || "Delete failed.");
+    }
+  };
+
+  const analyzeMedicineFromImage = async () => {
     try {
       const input = document.getElementById("medicine-image-input") as HTMLInputElement | null;
       const file = input?.files?.[0];
@@ -260,6 +316,7 @@ export default function PatientDashboardPage() {
       setMedicineStatus("Analyzing image...");
       setPriceResults([]);
       setMedicineLabel("");
+      setMedicineInfo(null);
 
       const formData = new FormData();
       formData.append("image", file);
@@ -270,27 +327,66 @@ export default function PatientDashboardPage() {
       const scanData = await scanRes.json();
       if (!scanRes.ok) throw new Error(scanData.error || "Scan failed.");
 
-      const detected = scanData.data?.medicine || scanData.text || "";
+      const parsed = scanData.data && typeof scanData.data === "object" ? scanData.data : null;
+      const detected = String(parsed?.medicine || scanData.text || "").trim();
       if (!detected) throw new Error("Could not detect medicine name.");
-      setMedicineLabel(detected);
-      setMedicineStatus("Searching prices...");
 
+      const normalized = {
+        medicine: String(parsed?.medicine || detected || "").trim(),
+        strength: parsed?.strength ? String(parsed.strength).trim() : "",
+        form: parsed?.form ? String(parsed.form).trim() : "",
+      };
+      setMedicineInfo(normalized);
+      setMedicineLabel(normalized.medicine);
+      setMedicineStatus("Image analyzed.");
+      return normalized;
+    } catch (err: any) {
+      setMedicineStatus(err?.message || "Analyzer failed.");
+      return null;
+    }
+  };
+
+  const handleMedicineAnalyze = async () => {
+    await analyzeMedicineFromImage();
+  };
+
+  const handleFindBestPrice = async () => {
+    try {
+      setMedicineStatus("Analyzing image...");
+      const analyzed = await analyzeMedicineFromImage();
+      const medicine = analyzed?.medicine || "";
+      if (!medicine) throw new Error("Analyze the image first to detect a medicine.");
+
+      setMedicineStatus("Searching prices...");
+      setPriceResults([]);
       const priceRes = await fetch("/api/medicine/prices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ medicine: detected }),
+        body: JSON.stringify({ name: medicine }),
       });
-      const priceData = await priceRes.json();
-      if (!priceRes.ok) throw new Error(priceData.error || "Price search failed.");
+      const priceText = await priceRes.text();
+      let priceData: any = null;
+      try {
+        priceData = priceText ? JSON.parse(priceText) : null;
+      } catch {
+        priceData = null;
+      }
+      if (!priceRes.ok) throw new Error(priceData?.error || "Price search failed.");
 
-      const list = Array.isArray(priceData.data) ? priceData.data : [];
+      const list = Array.isArray(priceData?.items) ? priceData.items : [];
       const sorted = list
-        .filter((item: any) => item && item.price_inr)
+        .map((item: any) => ({
+          title: String(item?.seller || item?.title || "Medicine").trim(),
+          price_inr: Number(item?.price),
+          url: String(item?.url || "").trim(),
+          source: String(item?.seller || item?.source || "").trim(),
+        }))
+        .filter((item: any) => item && item.price_inr && item.url)
         .sort((a: any, b: any) => Number(a.price_inr) - Number(b.price_inr));
       setPriceResults(sorted);
       setMedicineStatus(sorted.length ? "Prices updated." : "No prices found.");
     } catch (err: any) {
-      setMedicineStatus(err?.message || "Analyzer failed.");
+      setMedicineStatus(err?.message || "Price search failed.");
     }
   };
 
@@ -318,6 +414,40 @@ export default function PatientDashboardPage() {
                 : "Welcome to ABHA+"}
           </p>
           <h1 className="text-2xl font-semibold">Your Health Hub</h1>
+          {patientId && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-1 text-xs text-[color:var(--text-secondary)]">
+                Patient ID: <span className="font-mono text-[color:var(--text-primary)]">{patientId}</span>
+              </div>
+              {helperLink && (
+                <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-1 text-xs text-[color:var(--text-secondary)]">
+                  Helper link ready
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      navigator.clipboard.writeText(helperLink).then(
+                        () => setHelperLinkStatus("Helper link copied."),
+                        () => setHelperLinkStatus("Copy failed.")
+                      );
+                    }}
+                  >
+                    Copy Link
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+          {helperLinkStatus && (
+            <div className="mt-2 text-xs text-[color:var(--text-secondary)]">
+              {helperLinkStatus}
+            </div>
+          )}
+          {!helperLink && patientId && (
+            <div className="mt-2 text-xs text-[color:var(--text-secondary)]">
+              Set `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` to show the helper link.
+            </div>
+          )}
         </div>
 
         <Card className="neo-card">
@@ -338,6 +468,80 @@ export default function PatientDashboardPage() {
               <span className="text-[color:var(--text-primary)]">Not scheduled</span>
             </div>
             <Skeleton className="mt-2 h-3 w-2/3" />
+          </CardContent>
+        </Card>
+
+        <Card className="neo-card">
+          <CardHeader>
+            <CardTitle>Recent Records</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 text-sm text-[color:var(--text-secondary)]">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
+                  Reports
+                </p>
+                {(patient?.reports || []).length === 0 && (
+                  <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-xs">
+                    No reports uploaded yet.
+                  </div>
+                )}
+                {(patient?.reports || []).map((report: any) => (
+                  <div
+                    key={report.id}
+                    className="flex items-center justify-between gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-xs"
+                  >
+                    <span className="text-[color:var(--text-secondary)]">
+                      {report.file_name || "Report"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleDeleteRecord("report", String(report.id))}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-col gap-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
+                  Summaries
+                </p>
+                {(patient?.summaries || []).length === 0 && (
+                  <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-xs">
+                    No summaries yet.
+                  </div>
+                )}
+                {(patient?.summaries || []).map((summary: any) => (
+                  <div
+                    key={summary.id}
+                    className="flex items-center justify-between gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-xs"
+                  >
+                    <span className="text-[color:var(--text-secondary)]">
+                      {summary.summary || "Summary"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleDeleteRecord("summary", String(summary.id))}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {recordStatus && (
+              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-xs text-[color:var(--text-secondary)]">
+                {recordStatus}
+              </div>
+            )}
+            <Link href="/patient/profile">
+              <Button size="sm" variant="secondary">
+                Manage Privacy Settings
+              </Button>
+            </Link>
           </CardContent>
         </Card>
 
@@ -555,14 +759,28 @@ export default function PatientDashboardPage() {
                   <ImagePlus size={16} />
                   Analyze Image
                 </Button>
-                <Button className="w-full" variant="secondary" onClick={handleMedicineAnalyze}>
+                <Button className="w-full" variant="secondary" onClick={handleFindBestPrice}>
                   <Cpu size={16} />
                   Find Best Price
                 </Button>
               </div>
-              {medicineLabel && (
+              {medicineInfo?.medicine && (
                 <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-xs text-[color:var(--text-secondary)]">
-                  Detected: {medicineLabel}
+                  <div className="font-medium text-[color:var(--text-primary)]">
+                    {medicineInfo.medicine}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    {medicineInfo.strength && (
+                      <span className="rounded-full border border-[color:var(--border)] px-2 py-0.5">
+                        {medicineInfo.strength}
+                      </span>
+                    )}
+                    {medicineInfo.form && (
+                      <span className="rounded-full border border-[color:var(--border)] px-2 py-0.5">
+                        {medicineInfo.form}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
               {medicineStatus && (

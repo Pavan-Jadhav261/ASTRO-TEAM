@@ -18,12 +18,16 @@ function isPatientRoom(roomName: string) {
 
 async function buildToken(roomName: string, identity: string) {
   const usePatientKeys = isPatientRoom(roomName);
-  const apiKey = (usePatientKeys ? process.env.LIVEKIT_PATIENT_API_KEY : process.env.LIVEKIT_API_KEY || "").trim();
-  const apiSecret = (usePatientKeys ? process.env.LIVEKIT_PATIENT_API_SECRET : process.env.LIVEKIT_API_SECRET || "").trim();
+  const patientKey = process.env.LIVEKIT_PATIENT_API_KEY;
+  const patientSecret = process.env.LIVEKIT_PATIENT_API_SECRET;
+  const patientUrl = process.env.NEXT_PUBLIC_LIVEKIT_PATIENT_URL || process.env.LIVEKIT_PATIENT_URL;
+  const apiKey = ((usePatientKeys ? patientKey : null) || process.env.LIVEKIT_API_KEY || "").trim();
+  const apiSecret = ((usePatientKeys ? patientSecret : null) || process.env.LIVEKIT_API_SECRET || "").trim();
   const rawUrl =
-    usePatientKeys
-      ? process.env.NEXT_PUBLIC_LIVEKIT_PATIENT_URL || process.env.LIVEKIT_PATIENT_URL || ""
-      : process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL || "";
+    (usePatientKeys ? patientUrl : null) ||
+    process.env.NEXT_PUBLIC_LIVEKIT_URL ||
+    process.env.LIVEKIT_URL ||
+    "";
   const livekitUrl = normalizeUrl(rawUrl);
 
   if (!apiKey || !apiSecret || !livekitUrl) {

@@ -14,9 +14,14 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / '.env.local')
 load_dotenv(ROOT_DIR / '.env')
 
-LIVEKIT_URL = os.getenv('LIVEKIT_URL') or os.getenv('NEXT_PUBLIC_LIVEKIT_URL')
-LIVEKIT_API_KEY = os.getenv('LIVEKIT_API_KEY')
-LIVEKIT_API_SECRET = os.getenv('LIVEKIT_API_SECRET')
+LIVEKIT_URL = (
+    os.getenv('LIVEKIT_PATIENT_URL')
+    or os.getenv('NEXT_PUBLIC_LIVEKIT_PATIENT_URL')
+    or os.getenv('LIVEKIT_URL')
+    or os.getenv('NEXT_PUBLIC_LIVEKIT_URL')
+)
+LIVEKIT_API_KEY = os.getenv('LIVEKIT_PATIENT_API_KEY') or os.getenv('LIVEKIT_API_KEY')
+LIVEKIT_API_SECRET = os.getenv('LIVEKIT_PATIENT_API_SECRET') or os.getenv('LIVEKIT_API_SECRET')
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 GOOGLE_REALTIME_MODEL = os.getenv('GOOGLE_REALTIME_MODEL', 'gemini-2.5-flash-native-audio-preview-12-2025')
 GOOGLE_REALTIME_VOICE = os.getenv('GOOGLE_REALTIME_VOICE', 'Puck')
@@ -134,12 +139,13 @@ class ElderlyCareAssistant(Agent):
         self.summary_unavailable = False
         super().__init__(
             instructions="""
-You are a calm, respectful SAHAYA AI personal companion for elderly patients.
+You are a calm, respectful ABHA+ AI personal companion for elderly patients.
 
 Your role:
 - Explain the patient's latest doctor summary in simple language.
 - Answer questions like "What did the doctor say?" or "When should I take my medicines?"
 - Give clear DO and DO NOT guidance based on the summary.
+- Offer safe, gentle home remedies for mild symptoms when appropriate (e.g., hydration, rest, warm fluids).
 - Be empathetic and speak slowly in short sentences.
 - If the user says they feel lonely, keep them company with warm conversation and gentle check-ins.
 - If the user asks to book an appointment, ask for symptoms and call book_appointment.
@@ -155,6 +161,11 @@ Strict boundaries:
 - Do NOT perform OPD registration, OTP flows, or payment steps.
 - Do NOT collect registration details like name/age/phone unless needed to clarify.
 - This agent is purely for guidance and appointment booking.
+
+Home remedy safety:
+- Only suggest low-risk, general remedies.
+- Do not provide new medication doses or replacements for prescriptions.
+- If symptoms are severe, worsening, or unclear, advise seeing a doctor promptly.
 
 Rules:
 - Always base advice on the latest available summary and prescriptions.
@@ -256,131 +267,6 @@ Fallback guidance:
         payload = response.json()
         await self._publish('appointment_booked', payload)
         return f"Appointment booked. Token {payload.get('tokenNumber')} for {payload.get('department')} in room {payload.get('roomNumber')}."
-
-    @function_tool(description='Send OTP after collecting full name, age, gender, phone number, symptoms, and department')
-    async def send_registration_otp(
-        self,
-        ctx: RunContext,
-        name: str,
-        age: int,
-        gender: str,
-        phone_number: str,
-        symptoms: str,
-        department: str,
-    ) -> str:
-        details = {
-            'name': name.strip(),
-            'age': age,
-            'gender': gender.strip().upper(),
-            'phone': phone_number.strip(),
-            'symptoms': symptoms.strip(),
-            'department': department.strip(),
-        }
-
-        previous_phone = self.pending_details.get('phone') if self.pending_details else None
-        phone_changed = previous_phone is not None and previous_phone != details['phone']
-
-        # If OTP is already verified and only non-phone fields changed, update details and keep moving.
-        if self.pending_details and self.otp_verified and not phone_changed:
-            self.pending_details = details
-            await self._publish('confirmation_required', self.pending_details)
-            logger.info('Updated verified details without resending OTP for %s', details['phone'])
-            return 'Details updated. Please check the screen and tell me if the details are correct.'
-
-        # If OTP was already sent and phone did not change, do not send it again.
-        if self.pending_details and not self.otp_verified and not phone_changed:
-            self.pending_details = details
-            logger.info('Updated pending details without resending OTP for %s', details['phone'])
-            return 'Details updated. Please say the OTP that was already sent to your phone.'
-
-        response = self._post_json('/api/opd/voice-otp/send', {'phone': details['phone']}, 15)
-        if not response:
-            return 'I could not send the OTP. Please repeat the phone number clearly.'
-
-        if response.status_code != 200:
-            logger.error('OTP send failed: %s %s', response.status_code, response.text)
-            return 'I could not send the OTP. Please repeat the phone number clearly.'
-
-        payload = response.json()
-        details['phone'] = payload.get('phone', details['phone'])
-        self.pending_details = details
-        self.otp_verified = False
-        self.registration_payload = None
-
-        await self._publish('otp_sent', {'phone': details['phone']})
-        logger.info('OTP sent for %s', details['phone'])
-        return 'OTP sent. Please say the six digit OTP.'
-
-    @function_tool(description='Verify the spoken OTP for the current phone number')
-    async def verify_registration_otp(self, ctx: RunContext, otp_code: str) -> str:
-        if not self.pending_details:
-            return 'I do not have registration details yet. Please tell me your full name first.'
-
-        if self.otp_verified:
-            await self._publish('confirmation_required', self.pending_details)
-            return 'OTP is already verified. Please check the screen and tell me if the details are correct.'
-
-        response = self._post_json(
-            '/api/opd/voice-otp/verify',
-            {'phone': self.pending_details['phone'], 'code': otp_code.strip()},
-            15,
-        )
-
-        if not response:
-            await self._publish('otp_invalid', {})
-            return 'OTP is incorrect. Please say the OTP again, or ask me to resend it.'
-
-        if response.status_code != 200:
-            await self._publish('otp_invalid', {})
-            return 'OTP is incorrect. Please say the OTP again, or ask me to resend it.'
-
-        self.otp_verified = True
-        await self._publish('confirmation_required', self.pending_details)
-        logger.info('OTP verified for %s', self.pending_details['phone'])
-        return 'OTP verified. Please check the details on the screen and tell me if they are correct.'
-
-    @function_tool(description='Resend the OTP for the current registration, or resend after a phone number change')
-    async def resend_registration_otp(self, ctx: RunContext, phone_number: str = '') -> str:
-        if not self.pending_details:
-            return 'I do not have registration details yet. Please tell me your full name first.'
-
-        if phone_number.strip():
-            self.pending_details['phone'] = phone_number.strip()
-            self.otp_verified = False
-
-        response = self._post_json('/api/opd/voice-otp/send', {'phone': self.pending_details['phone']}, 15)
-        if not response:
-            return 'I could not resend the OTP. Please repeat the phone number clearly.'
-
-        if response.status_code != 200:
-            logger.error('OTP resend failed: %s %s', response.status_code, response.text)
-            return 'I could not resend the OTP. Please repeat the phone number clearly.'
-
-        payload = response.json()
-        self.pending_details['phone'] = payload.get('phone', self.pending_details['phone'])
-        await self._publish('otp_sent', {'phone': self.pending_details['phone']})
-        return 'OTP sent again. Please say the six digit OTP.'
-
-    @function_tool(description='Create the patient registration and open payment after OTP verification and spoken confirmation')
-    async def confirm_registration_and_prepare_payment(self, ctx: RunContext) -> str:
-        if not self.pending_details:
-            return 'I do not have the registration details yet.'
-
-        if not self.otp_verified:
-            return 'OTP verification is still pending. Please say the OTP first.'
-
-        response = self._post_json('/api/opd/voice-register', self.pending_details, 20)
-        if not response:
-            return 'Registration failed. Please try again.'
-
-        if response.status_code != 200:
-            logger.error('Registration failed: %s %s', response.status_code, response.text)
-            return 'Registration failed. Please try again.'
-
-        self.registration_payload = response.json()
-        await self._publish('registration_ready', self.registration_payload)
-        logger.info('Registration ready for payment: %s', self.registration_payload.get('visitId'))
-        return 'Your details are confirmed. Payment is opening on the screen now.'
 
 
 server = AgentServer()

@@ -25,7 +25,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const patientId = payload.trim();
+  let patientId = payload.trim();
+  if (patientId.startsWith("family_")) patientId = patientId.slice("family_".length);
+  if (patientId.startsWith("patient_")) patientId = patientId.slice("patient_".length);
+  if (patientId.startsWith("patient-")) patientId = patientId.slice("patient-".length);
 
   try {
     await prisma.patientHelper.upsert({
@@ -43,7 +46,7 @@ export async function POST(request: Request) {
       },
     });
 
-    const token = process.env.TELEGRAM_BOT_TOKEN || "";
+    const token = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || "";
     if (token) {
       await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: "POST",

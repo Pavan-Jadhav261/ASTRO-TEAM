@@ -23,11 +23,12 @@ export async function POST(request: Request) {
     }
 
     const usePatientKeys = isPatientRoom(roomName);
-    const apiKey = usePatientKeys ? process.env.LIVEKIT_PATIENT_API_KEY : process.env.LIVEKIT_API_KEY;
-    const apiSecret = usePatientKeys ? process.env.LIVEKIT_PATIENT_API_SECRET : process.env.LIVEKIT_API_SECRET;
-    const rawUrl = usePatientKeys
-      ? process.env.LIVEKIT_PATIENT_URL || process.env.NEXT_PUBLIC_LIVEKIT_PATIENT_URL
-      : process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL;
+    const patientKey = process.env.LIVEKIT_PATIENT_API_KEY;
+    const patientSecret = process.env.LIVEKIT_PATIENT_API_SECRET;
+    const patientUrl = process.env.LIVEKIT_PATIENT_URL || process.env.NEXT_PUBLIC_LIVEKIT_PATIENT_URL;
+    const apiKey = (usePatientKeys ? patientKey : null) || process.env.LIVEKIT_API_KEY;
+    const apiSecret = (usePatientKeys ? patientSecret : null) || process.env.LIVEKIT_API_SECRET;
+    const rawUrl = (usePatientKeys ? patientUrl : null) || process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL;
     const agentName = requestedAgentName || process.env.LIVEKIT_AGENT_NAME || "hospital-agent";
 
     if (!apiKey || !apiSecret || !rawUrl) {
@@ -41,11 +42,6 @@ export async function POST(request: Request) {
     const rooms = await roomClient.listRooms([roomName]);
     if (!rooms || rooms.length === 0) {
       await roomClient.createRoom({ name: roomName });
-    }
-
-    const existing = await agentClient.listDispatch(roomName);
-    if (existing?.some((d) => d.agentName === agentName)) {
-      return NextResponse.json({ success: true, dispatched: false });
     }
 
     const dispatch = await agentClient.createDispatch(roomName, agentName, {

@@ -28,11 +28,13 @@ export async function POST(request: Request) {
       },
     });
 
+    const patientName = patient?.name || "patient";
+    const locationLine = location
+      ? `Live location: https://www.google.com/maps?q=${location}`
+      : "Live location unavailable.";
     await notifyTelegramHelpers(
       patientId,
-      `🚨 Emergency alert for ${patient?.name || "patient"}. Reason: ${reason}${
-        location ? `\nLocation: https://www.google.com/maps?q=${location}` : ""
-      }`
+      `Emergency for ${patientName}\nReason: ${reason}\n${locationLine}`
     );
 
     if (location) {

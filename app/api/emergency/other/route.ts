@@ -63,11 +63,13 @@ export async function POST(request: Request) {
     });
 
     const patient = await prisma.patient.findUnique({ where: { id: patientId } });
+    const patientName = patient?.name || "patient";
+    const locationLine = location
+      ? `Live location: https://www.google.com/maps?q=${location}`
+      : "Live location unavailable.";
     await notifyTelegramHelpers(
       patientId,
-      `🚨 Emergency alert for ${patient?.name || "patient"}. Reported: ${summary}${
-        location ? `\nLocation: https://www.google.com/maps?q=${location}` : ""
-      }`
+      `Emergency for ${patientName}\nReported: ${summary}\n${locationLine}`
     );
 
     if (location) {

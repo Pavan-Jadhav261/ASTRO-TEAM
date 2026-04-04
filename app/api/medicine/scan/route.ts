@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const apiKey = process.env.GOOGLE_MED_IMAGE_API_KEY || "";
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+  const model = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
 
   if (!apiKey) {
     return NextResponse.json({ error: "Gemini API key missing." }, { status: 500 });
@@ -29,17 +29,48 @@ export async function POST(request: Request) {
         inlineData: { mimeType, data: base64 },
       },
       {
-        text: "Identify the medicine name from this image. Return JSON with keys: medicine, strength, form.",
+        text: "Identify the medicine name from this image. Use the tool call to return structured data only.",
       },
     ],
+    config: {
+      tools: [
+        {
+          functionDeclarations: [
+            {
+              name: "extract_medicine",
+              description: "Extract the medicine name, strength, and form from the image.",
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  medicine: { type: Type.STRING },
+                  strength: { type: Type.STRING },
+                  form: { type: Type.STRING },
+                },
+                required: ["medicine"],
+              },
+            },
+          ],
+        },
+      ],
+    },
   });
 
   const text = response.text || "";
+  const functionCalls = response.functionCalls || [];
   let parsed: any = null;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    parsed = null;
+
+  for (const call of functionCalls) {
+    if (call.name === "extract_medicine") {
+      parsed = call.args || null;
+    }
+  }
+
+  if (!parsed && text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
   }
 
   return NextResponse.json({

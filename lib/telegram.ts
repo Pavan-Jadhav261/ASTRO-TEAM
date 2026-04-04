@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 const TELEGRAM_API = "https://api.telegram.org";
 
 export async function sendTelegramMessage(chatId: string, text: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN || "";
+  const token = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || "";
   if (!token || !chatId) return;
 
   await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
