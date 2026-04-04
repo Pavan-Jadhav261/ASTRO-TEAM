@@ -21,9 +21,8 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/neo/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
+import { usePathname } from "next/navigation";
 
 const ease = [0.22, 1, 0.36, 1];
 
@@ -35,10 +34,13 @@ const quickActions = [
 ];
 
 export default function PatientDashboardPage() {
+  const pathname = usePathname();
   const [emergencyStatus, setEmergencyStatus] = useState<string | null>(null);
   const [emergencyError, setEmergencyError] = useState<string | null>(null);
   const [patient, setPatient] = useState<any>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const [reportFileName, setReportFileName] = useState("");
+  const [medicineImageName, setMedicineImageName] = useState("");
 
   useEffect(() => {
     const patientId = localStorage.getItem("abha_patient_id") || "";
@@ -95,9 +97,11 @@ export default function PatientDashboardPage() {
         <AbhaLogo />
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <Button variant="ghost" size="sm">
-            Profile
-          </Button>
+          <Link href="/patient/profile">
+            <Button variant="ghost" size="sm">
+              Profile
+            </Button>
+          </Link>
         </div>
       </header>
 
@@ -241,60 +245,81 @@ export default function PatientDashboardPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <Card className="neo-card">
             <CardHeader>
-              <CardTitle>Uploads</CardTitle>
+              <CardTitle>Upload Medical Report</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              <label className="flex flex-col gap-2 text-sm">
+              <div className="flex flex-col gap-2 text-sm">
+                <span className="text-xs text-[color:var(--text-secondary)]">
+                  Report File
+                </span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-4 py-2 text-xs font-medium text-[color:var(--text-primary)] transition hover:border-[color:var(--accent-primary)]">
+                    <FileUp size={14} />
+                    Choose File
+                    <Input
+                      type="file"
+                      accept="image/*,.pdf"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        setReportFileName(file?.name || "");
+                      }}
+                    />
+                  </label>
+                  <span className="text-xs text-[color:var(--text-secondary)]">
+                    {reportFileName || "PDF, JPG, PNG up to 10MB"}
+                  </span>
+                </div>
+              </div>
+              <Button className="w-full" variant="secondary">
+                <FileUp size={16} />
+                Upload Report
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="neo-card md:col-span-2">
+            <CardHeader>
+              <CardTitle>Medicine Image Analyzer & Best Price</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2 text-sm">
                 <span className="text-xs text-[color:var(--text-secondary)]">
                   Medicine Image
                 </span>
-                <Input type="file" accept="image/*" />
-              </label>
-              <label className="flex flex-col gap-2 text-sm">
-                <span className="text-xs text-[color:var(--text-secondary)]">
-                  Reports
-                </span>
-                <Input type="file" accept="image/*,.pdf" />
-              </label>
-              <Link href="/patient/digital-twin">
-                <Button className="w-full">
-                  <Cpu size={16} />
-                  Digital Twin
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-4 py-2 text-xs font-medium text-[color:var(--text-primary)] transition hover:border-[color:var(--accent-primary)]">
+                    <ImagePlus size={14} />
+                    Choose Image
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        setMedicineImageName(file?.name || "");
+                      }}
+                    />
+                  </label>
+                  <span className="text-xs text-[color:var(--text-secondary)]">
+                    {medicineImageName || "PNG or JPG, clear label recommended"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-4 py-3 text-sm text-[color:var(--text-secondary)]">
+                Compare nearby pharmacies for the best price on your prescriptions.
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button className="w-full" variant="secondary">
+                  <ImagePlus size={16} />
+                  Analyze Image
                 </Button>
-              </Link>
-            </CardContent>
-          </Card>
-          <Card className="neo-card">
-            <CardHeader>
-              <CardTitle>Profile & Support</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Accordion type="single" collapsible>
-                <AccordionItem value="profile">
-                  <AccordionTrigger>Profile Options</AccordionTrigger>
-                  <AccordionContent>
-                    <div className="flex flex-col gap-2 text-sm">
-                      <span>Logout</span>
-                      <span>Linked Helpers</span>
-                      <span>Privacy Settings</span>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-                <AccordionItem value="support">
-                  <AccordionTrigger>Help & Support</AccordionTrigger>
-                  <AccordionContent>
-                    Call center, FAQs, and feedback channels.
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-              <Separator className="my-4" />
-              <div className="flex flex-wrap gap-3">
-                <Button size="sm">Voice Agent</Button>
-                <Link href="/patient/summaries">
-                  <Button size="sm" variant="secondary">
-                    Previous Summaries
-                  </Button>
-                </Link>
+                <Button className="w-full" variant="secondary">
+                  <Cpu size={16} />
+                  Find Best Price
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -302,14 +327,25 @@ export default function PatientDashboardPage() {
       </main>
 
       <nav className="fixed bottom-4 left-1/2 z-40 flex w-[92%] max-w-md -translate-x-1/2 items-center justify-between rounded-full border border-[color:var(--border)] bg-[color:var(--surface)] px-6 py-3">
-        {[Home, ClipboardList, Pill, User].map((Icon, index) => (
-          <button
-            key={index}
-            className="flex h-10 w-10 items-center justify-center rounded-full text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"
-          >
-            <Icon size={18} />
-          </button>
-        ))}
+        {[
+          { href: "/patient/dashboard", icon: Home, label: "Home" },
+          { href: "/patient/records", icon: ClipboardList, label: "Records" },
+          { href: "/patient/prescriptions", icon: Pill, label: "Prescriptions" },
+          { href: "/patient/profile", icon: User, label: "Profile" },
+        ].map((item) => {
+          const Icon = item.icon;
+          const isActive = pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-label={item.label}
+              className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${isActive ? "bg-[color:var(--elevated)] text-[color:var(--text-primary)]" : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"}`}
+            >
+              <Icon size={18} />
+            </Link>
+          );
+        })}
       </nav>
     </div>
   );

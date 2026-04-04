@@ -8,8 +8,15 @@ export async function GET(
 ) {
   const { visitId } = await params;
   try {
-    const data = await prisma.opdVisit.findUnique({
-      where: { visit_id: visitId },
+    const data = await prisma.opdVisit.findFirst({
+      where: {
+        OR: [
+          { visit_id: visitId },
+          { token_number: visitId },
+          { patient_id: visitId },
+        ],
+      },
+      orderBy: { created_at: "desc" },
     });
     if (data) {
       return NextResponse.json({

@@ -65,6 +65,7 @@ export default function DoctorConsultPage() {
   const [radarScores, setRadarScores] = useState<any>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [timer, setTimer] = useState(0);
+  const [sessionTimer, setSessionTimer] = useState(0);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -96,6 +97,13 @@ export default function DoctorConsultPage() {
     };
   }, [recordingState]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSessionTimer((value) => value + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60)
       .toString()
@@ -113,6 +121,8 @@ export default function DoctorConsultPage() {
       const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
       recorderRef.current = recorder;
       chunksRef.current = [];
+      setTimer(0);
+      setRecordingState("recording");
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -149,8 +159,6 @@ export default function DoctorConsultPage() {
       };
 
       recorder.start();
-      setTimer(0);
-      setRecordingState("recording");
     } catch (err: any) {
       setRecordError(err?.message || "Microphone access denied.");
     }
@@ -165,13 +173,15 @@ export default function DoctorConsultPage() {
   const visits = patientProfile?.visits || [];
   const reports = patientProfile?.reports || [];
   const displayPrescriptions = aiPrescriptions.length > 0 ? aiPrescriptions : prescriptions;
-  const radarData = [
-    { metric: "Cardio", score: radarScores?.cardio ?? 60 },
-    { metric: "Mental", score: radarScores?.mental ?? 55 },
-    { metric: "Physical", score: radarScores?.physical ?? 62 },
-    { metric: "Nutrition", score: radarScores?.nutrition ?? 58 },
-    { metric: "Risk", score: radarScores?.risk ?? 50 },
-  ];
+  const radarData = radarScores
+    ? [
+        { metric: "Cardio", score: radarScores.cardio ?? 0 },
+        { metric: "Mental", score: radarScores.mental ?? 0 },
+        { metric: "Physical", score: radarScores.physical ?? 0 },
+        { metric: "Nutrition", score: radarScores.nutrition ?? 0 },
+        { metric: "Risk", score: radarScores.risk ?? 0 },
+      ]
+    : [];
 
   return (
     <main className="relative min-h-screen abha-mesh neo-bg px-4 py-4 md:px-6 md:py-6 text-[15px] md:text-[16px]">
@@ -185,12 +195,14 @@ export default function DoctorConsultPage() {
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-2 text-xs text-[color:var(--text-secondary)]">
             <Stethoscope size={14} />
-            Session {formatTime(timer)}
+            Session {formatTime(sessionTimer)}
           </div>
-          <Button size="sm" aria-label="Open AI assistant">
-            <Brain size={14} />
-            AI Agent (RAG)
-          </Button>
+          <Link href="/doctor/rag">
+            <Button size="sm" aria-label="Open AI assistant">
+              <Brain size={14} />
+              AI Agent (RAG)
+            </Button>
+          </Link>
           <ThemeToggle />
         </div>
       </header>
@@ -223,6 +235,10 @@ export default function DoctorConsultPage() {
           <CardContent className="flex flex-col gap-3 text-sm overflow-y-auto" style={{ maxHeight: "calc(100% - 60px)" }}>
             {isLoading ? (
               <Skeleton className="h-6 w-2/3" />
+            ) : !visit ? (
+              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                Patient visit not found. Check the token/visit ID and try again.
+              </div>
             ) : (
               <>
                 <div className="flex items-center gap-3">
@@ -322,18 +338,11 @@ export default function DoctorConsultPage() {
               </Button>
             </div>
 
-            {/* Live Transcript */}
-            <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm leading-6">
-              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
-                Live Transcript
-              </p>
-              <p className="text-[color:var(--text-secondary)]">
-                {transcript || "Start recording to generate a transcript."}
-              </p>
-              {recordError && (
-                <p className="mt-3 text-xs text-red-400">{recordError}</p>
-              )}
-            </div>
+            {recordError && (
+              <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+                {recordError}
+              </div>
+            )}
 
             {/* AI Summary Cards */}
             <div className="grid gap-3 sm:grid-cols-2">
@@ -410,21 +419,27 @@ export default function DoctorConsultPage() {
             <CardTitle id="health-radar-title">Health Radar</CardTitle>
           </CardHeader>
           <CardContent className="h-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={radarData} outerRadius="70%">
-                <PolarGrid stroke="rgba(148,163,184,0.25)" />
-                <PolarAngleAxis dataKey="metric" tick={{ fill: "var(--text-secondary)", fontSize: 11 }} />
-                <RadarShape dataKey="score" stroke="#6366f1" fill="rgba(99,102,241,0.35)" strokeWidth={2} />
-                <Tooltip
-                  contentStyle={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 12,
-                    fontSize: 12,
-                  }}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
+            {radarData.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-[color:var(--text-secondary)]">
+                Record a consultation to generate the radar.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={radarData} outerRadius="70%">
+                  <PolarGrid stroke="rgba(148,163,184,0.25)" />
+                  <PolarAngleAxis dataKey="metric" tick={{ fill: "var(--text-secondary)", fontSize: 11 }} />
+                  <RadarShape dataKey="score" stroke="#6366f1" fill="rgba(99,102,241,0.35)" strokeWidth={2} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--surface)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 12,
+                      fontSize: 12,
+                    }}
+                  />
+                </RadarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 

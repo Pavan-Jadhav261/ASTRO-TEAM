@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Camera, MapPin, QrCode, X, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import jsQR from "jsqr";
 
 import { AbhaLogo } from "@/components/neo/abha-logo";
 import { ThemeToggle } from "@/components/neo/theme-toggle";
@@ -23,8 +24,11 @@ export default function DoctorDashboardPage() {
   const [scanValue, setScanValue] = useState("");
   const [emergency, setEmergency] = useState<any>(null);
   const [emergencyPatient, setEmergencyPatient] = useState<any>(null);
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanRafRef = useRef<number | null>(null);
   const [scannerError, setScannerError] = useState<string | null>(null);
@@ -57,10 +61,7 @@ export default function DoctorDashboardPage() {
 
   const startScanner = async () => {
     setScannerError(null);
-    if (!("BarcodeDetector" in window)) {
-      setScannerError("Barcode scanning is not supported in this browser.");
-      return;
-    }
+    const supportsBarcode = "BarcodeDetector" in window;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
@@ -70,30 +71,63 @@ export default function DoctorDashboardPage() {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
-      const detector = new (window as any).BarcodeDetector({
-        formats: ["qr_code"],
-      });
+      if (!supportsBarcode) {
+        setScannerError("Auto-detect not supported. Align QR and hold steady.");
+      }
+      const detector = supportsBarcode
+        ? new (window as any).BarcodeDetector({ formats: ["qr_code"] })
+        : null;
       const scan = async () => {
         if (!videoRef.current) return;
         try {
-          const barcodes = await detector.detect(videoRef.current);
-          if (barcodes && barcodes.length > 0) {
-            const rawValue = barcodes[0].rawValue || "";
-            stopScanner();
-            setOpen(false);
-            try {
-              const parsed = JSON.parse(rawValue);
-              if (parsed.visitId) {
-                router.push(`/doctor/consult/${parsed.visitId}`);
-                return;
+          if (detector) {
+            const barcodes = await detector.detect(videoRef.current);
+            if (barcodes && barcodes.length > 0) {
+              const rawValue = barcodes[0].rawValue || "";
+              stopScanner();
+              setOpen(false);
+              try {
+                const parsed = JSON.parse(rawValue);
+                if (parsed.visitId) {
+                  router.push(`/doctor/consult/${parsed.visitId}`);
+                  return;
+                }
+              } catch {
+                // ignore
               }
-            } catch {
-              // ignore
+              if (rawValue) {
+                router.push(`/doctor/consult/${rawValue}`);
+              }
+              return;
             }
-            if (rawValue) {
-              router.push(`/doctor/consult/${rawValue}`);
+          } else {
+            const canvas = canvasRef.current;
+            const video = videoRef.current;
+            if (canvas && video.videoWidth && video.videoHeight) {
+              const ctx = canvas.getContext("2d");
+              if (ctx) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, canvas.width, canvas.height);
+                if (code?.data) {
+                  stopScanner();
+                  setOpen(false);
+                  try {
+                    const parsed = JSON.parse(code.data);
+                    if (parsed.visitId) {
+                      router.push(`/doctor/consult/${parsed.visitId}`);
+                      return;
+                    }
+                  } catch {
+                    // ignore
+                  }
+                  router.push(`/doctor/consult/${code.data}`);
+                  return;
+                }
+              }
             }
-            return;
           }
         } catch {
           // ignore detection errors
@@ -157,6 +191,28 @@ export default function DoctorDashboardPage() {
     };
   }, []);
 
+
+  useEffect(() => {
+    const loadDashboard = async () => {
+      try {
+        setDashboardError(null);
+        const res = await fetch("/api/doctor/dashboard");
+        const text = await res.text();
+        let data: any = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          data = {};
+        }
+        if (!res.ok) throw new Error(data.error || "Failed to load dashboard.");
+        setDashboardData(data);
+      } catch (err: any) {
+        setDashboardError(err?.message || "Failed to load dashboard.");
+      }
+    };
+    loadDashboard();
+  }, []);
+
   return (
     <div className="min-h-screen abha-mesh neo-bg px-6 py-8">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between">
@@ -164,9 +220,20 @@ export default function DoctorDashboardPage() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-xs text-[color:var(--text-secondary)]">
             <Avatar>
-              <AvatarFallback>AS</AvatarFallback>
+              <AvatarFallback>
+                {dashboardData?.doctor?.name
+                  ? dashboardData.doctor.name
+                      .split(" ")
+                      .map((part: string) => part[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase()
+                  : "DR"}
+              </AvatarFallback>
             </Avatar>
-                        Dr. Arjun Sen - Cardiology
+            {dashboardData?.doctor?.name
+              ? `${dashboardData.doctor.name} - ${dashboardData.doctor.department || "Department"}`
+              : "Doctor Portal"}
           </div>
           <ThemeToggle />
           <Link href="/login/doctor" className="text-xs text-[color:var(--text-secondary)]">
@@ -183,10 +250,12 @@ export default function DoctorDashboardPage() {
               AI agent (RAG-trained) is ready to assist with patient insights.
             </p>
           </div>
-          <Button size="lg">
-            <Sparkles size={16} />
-            AI Agent (RAG)
-          </Button>
+          <Link href="/doctor/rag">
+            <Button size="lg">
+              <Sparkles size={16} />
+              AI Agent (RAG)
+            </Button>
+          </Link>
         </div>
 
         <div className="flex justify-center">
@@ -211,9 +280,27 @@ export default function DoctorDashboardPage() {
 
         <div className="grid gap-4 sm:grid-cols-3">
           {[
-            { label: "Patients in Queue", value: "18" },
-            { label: "Avg time per patient", value: "9.4 min" },
-            { label: "Consulted Today", value: "27" },
+            {
+              label: "Patients in Queue",
+              value:
+                dashboardData?.stats?.queueCount != null
+                  ? String(dashboardData.stats.queueCount)
+                  : "--",
+            },
+            {
+              label: "Avg time per patient",
+              value:
+                dashboardData?.stats?.avgMinutes != null
+                  ? `${dashboardData.stats.avgMinutes} min`
+                  : "--",
+            },
+            {
+              label: "Consulted Today",
+              value:
+                dashboardData?.stats?.consultedToday != null
+                  ? String(dashboardData.stats.consultedToday)
+                  : "--",
+            },
           ].map((stat) => (
             <Card key={stat.label} className="neo-card">
               <CardHeader>
@@ -236,12 +323,53 @@ export default function DoctorDashboardPage() {
           </TabsList>
           <TabsContent value="queue">
             <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm text-[color:var(--text-secondary)]">
-              Active queue overview with priority flags.
+              {dashboardError && (
+                <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+                  {dashboardError}
+                </div>
+              )}
+              {!dashboardError && (dashboardData?.queue || []).length === 0 && (
+                <div>No active queue yet.</div>
+              )}
+              <div className="space-y-2">
+                {(dashboardData?.queue || []).map((visit: any) => (
+                  <div
+                    key={visit.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--elevated)] px-3 py-2 text-xs text-[color:var(--text-secondary)]"
+                  >
+                    <div className="font-mono text-[color:var(--text-primary)]">
+                      {visit.token || visit.id}
+                    </div>
+                    <div>
+                      {visit.name} {visit.age ? `(${visit.age}y)` : ""} {visit.gender || ""}
+                    </div>
+                    <div>{visit.department || "OPD"}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </TabsContent>
           <TabsContent value="completed">
             <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm text-[color:var(--text-secondary)]">
-              Recently completed consultations.
+              {!dashboardError && (dashboardData?.completed || []).length === 0 && (
+                <div>No completed consultations yet.</div>
+              )}
+              <div className="space-y-2">
+                {(dashboardData?.completed || []).map((summary: any) => (
+                  <div
+                    key={summary.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--elevated)] px-3 py-2 text-xs text-[color:var(--text-secondary)]"
+                  >
+                    <div className="font-mono text-[color:var(--text-primary)]">
+                      {summary.token || summary.visitId}
+                    </div>
+                    <div>
+                      {summary.name} {summary.age ? `(${summary.age}y)` : ""} {summary.gender || ""}
+                    </div>
+                    <div>{summary.diagnosis || "Summary saved"}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </TabsContent>
         </Tabs>
@@ -302,6 +430,7 @@ export default function DoctorDashboardPage() {
                   muted
                   playsInline
                 />
+                <canvas ref={canvasRef} className="hidden" />
                 <div className="absolute inset-6 rounded-2xl border border-dashed border-[color:var(--accent-secondary)]/70" />
                 <div className="absolute left-6 top-6 h-6 w-6 border-l-2 border-t-2 border-[color:var(--accent-secondary)]" />
                 <div className="absolute right-6 top-6 h-6 w-6 border-r-2 border-t-2 border-[color:var(--accent-secondary)]" />
