@@ -19,6 +19,15 @@ export async function sendTelegramMessage(chatId: string, text: string) {
 
 export async function notifyTelegramHelpers(patientId: string, text: string) {
   if (!patientId || !text) return;
+  const botServer = (process.env.TELEGRAM_BOT_SERVER_URL || "").trim();
+  if (botServer) {
+    await fetch(`${botServer.replace(/\/$/, "")}/send-alert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ patientId, message: text }),
+    }).catch(() => null);
+    return;
+  }
   const helpers = await prisma.patientHelper.findMany({
     where: { patient_id: patientId },
   });

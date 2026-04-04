@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const runtime = "nodejs";
+
+export async function GET() {
+  return NextResponse.json({ ok: true });
+}
+
 function parseStartPayload(text: string) {
   if (!text) return "";
   const parts = text.trim().split(" ");
@@ -10,6 +16,9 @@ function parseStartPayload(text: string) {
 
 export async function POST(request: Request) {
   const update = await request.json().catch(() => null);
+  if (update) {
+    console.log("Telegram webhook update:", JSON.stringify(update).slice(0, 1000));
+  }
   if (!update?.message?.text) {
     return NextResponse.json({ ok: true });
   }

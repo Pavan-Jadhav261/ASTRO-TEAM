@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     const patient = await prisma.patient.findUnique({ where: { id: patientId } });
     const patientName = patient?.name || "patient";
     const locationLine = location
-      ? `Live location: https://www.google.com/maps?q=${location}`
+      ? `Live location: https://www.google.com/maps?q=${encodeURIComponent(location.replace(/\s+/g, ""))}`
       : "Live location unavailable.";
     await notifyTelegramHelpers(
       patientId,
