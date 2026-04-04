@@ -17,6 +17,7 @@ export async function GET(
         prescriptions: { orderBy: { created_at: "desc" }, take: 10 },
         summaries: { orderBy: { created_at: "desc" }, take: 5 },
         visits: { orderBy: { created_at: "desc" }, take: 5 },
+        reports: { orderBy: { created_at: "desc" }, take: 5 },
       },
     });
     if (!patient) {

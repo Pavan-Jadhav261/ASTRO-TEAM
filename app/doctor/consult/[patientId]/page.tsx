@@ -3,6 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
+  PolarAngleAxis,
+  PolarGrid,
+  Radar as RadarShape,
+  RadarChart,
+  ResponsiveContainer,
+  Tooltip,
+} from "recharts";
+import {
   ArrowLeft,
   Brain,
   Clock,
@@ -52,6 +60,9 @@ export default function DoctorConsultPage() {
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
   const [transcript, setTranscript] = useState("");
   const [toolResults, setToolResults] = useState<any[]>([]);
+  const [aiSummary, setAiSummary] = useState<any>(null);
+  const [aiPrescriptions, setAiPrescriptions] = useState<any[]>([]);
+  const [radarScores, setRadarScores] = useState<any>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [timer, setTimer] = useState(0);
 
@@ -126,7 +137,10 @@ export default function DoctorConsultPage() {
             throw new Error(data?.error || "Gemini request failed.");
           }
           setTranscript(data.transcript || "");
-          setToolResults(data.toolResults || []);
+          setToolResults(data.functionCalls || []);
+          setAiSummary(data.analysis?.summary || null);
+          setAiPrescriptions(data.analysis?.prescriptions || []);
+          setRadarScores(data.analysis?.radar || null);
           setRecordingState("done");
         } catch (err: any) {
           setRecordError(err?.message || "Failed to process audio.");
@@ -150,6 +164,14 @@ export default function DoctorConsultPage() {
   const prescriptions = patientProfile?.prescriptions || [];
   const visits = patientProfile?.visits || [];
   const reports = patientProfile?.reports || [];
+  const displayPrescriptions = aiPrescriptions.length > 0 ? aiPrescriptions : prescriptions;
+  const radarData = [
+    { metric: "Cardio", score: radarScores?.cardio ?? 60 },
+    { metric: "Mental", score: radarScores?.mental ?? 55 },
+    { metric: "Physical", score: radarScores?.physical ?? 62 },
+    { metric: "Nutrition", score: radarScores?.nutrition ?? 58 },
+    { metric: "Risk", score: radarScores?.risk ?? 50 },
+  ];
 
   return (
     <main className="relative min-h-screen abha-mesh neo-bg px-4 py-4 md:px-6 md:py-6 text-[15px] md:text-[16px]">
@@ -225,6 +247,19 @@ export default function DoctorConsultPage() {
                   )}
                   {visit?.tokenNumber ? <Badge>Token {visit.tokenNumber}</Badge> : <Badge>Token NA</Badge>}
                 </div>
+                {aiSummary && (
+                  <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.15em] text-[color:var(--text-secondary)] mb-1">
+                      AI Summary
+                    </p>
+                    <p className="text-xs text-[color:var(--text-primary)]">
+                      {aiSummary.chiefComplaint || "Chief complaint pending."}
+                    </p>
+                    <p className="mt-1 text-xs text-[color:var(--text-secondary)]">
+                      Diagnosis: {aiSummary.diagnosis || "Pending"}
+                    </p>
+                  </div>
+                )}
                 {visit?.symptoms && (
                   <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2">
                     <p className="text-xs uppercase tracking-[0.15em] text-[color:var(--text-secondary)] mb-1">Symptoms</p>
@@ -300,28 +335,37 @@ export default function DoctorConsultPage() {
               )}
             </div>
 
-            {/* Gemini Tools Output */}
-            <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--elevated)] p-4 text-sm">
-              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
-                Gemini Tools Output
-              </p>
-              {toolResults.length === 0 ? (
-                <p className="text-[color:var(--text-secondary)]">Waiting for tool calls.</p>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {toolResults.map((tool, index) => (
-                    <div
-                      key={index}
-                      className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2"
-                    >
-                      <p className="text-xs font-semibold">{tool.name}</p>
-                      <pre className="mt-1 whitespace-pre-wrap text-xs text-[color:var(--text-secondary)]">
-{JSON.stringify(tool.result, null, 2)}
-                      </pre>
+            {/* AI Summary Cards */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                { key: "chiefComplaint", label: "Chief Complaint", color: "#E63946" },
+                { key: "findings", label: "Findings", color: "#E6A817" },
+                { key: "diagnosis", label: "Diagnosis", color: "#12B88A" },
+                { key: "plan", label: "Plan", color: "#1A6EBF" },
+              ].map((section) => (
+                <div
+                  key={section.key}
+                  className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--elevated)] p-4 text-sm"
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="h-10 w-1 rounded-full"
+                      style={{ background: section.color }}
+                    />
+                    <div>
+                      <p
+                        className="text-xs font-semibold uppercase tracking-[0.2em]"
+                        style={{ color: section.color }}
+                      >
+                        {section.label}
+                      </p>
+                      <p className="mt-2 text-[color:var(--text-secondary)]">
+                        {aiSummary?.[section.key] || "Not available yet."}
+                      </p>
                     </div>
-                  ))}
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
 
             {/* Prescriptions */}
@@ -331,19 +375,19 @@ export default function DoctorConsultPage() {
                 Prescriptions
               </p>
               <div className="flex flex-col gap-2 text-sm text-[color:var(--text-secondary)]">
-                {prescriptions.length === 0 ? (
+                {displayPrescriptions.length === 0 ? (
                   <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--elevated)] px-3 py-2">
                     No prescriptions yet.
                   </div>
                 ) : (
-                  prescriptions.map((rx: any) => (
+                  displayPrescriptions.map((rx: any) => (
                     <div
-                      key={rx.id}
+                      key={rx.id || rx.medicine || Math.random()}
                       className="rounded-xl border border-[color:var(--border)] bg-[color:var(--elevated)] px-4 py-3"
                     >
                       <div className="flex items-center gap-2">
                         <Pill size={14} className="text-[color:var(--accent-secondary)]" />
-                        <span className="font-medium">{rx.medicine}</span>
+                        <span className="font-medium">{rx.medicine || rx.medicineName || "Medicine"}</span>
                       </div>
                       <p className="text-xs text-[color:var(--text-secondary)]">
                         {rx.dosage || "Dosage NA"} - {rx.duration || "Duration NA"}
@@ -365,8 +409,22 @@ export default function DoctorConsultPage() {
           <CardHeader>
             <CardTitle id="health-radar-title">Health Radar</CardTitle>
           </CardHeader>
-          <CardContent className="flex h-full flex-col justify-center text-sm text-[color:var(--text-secondary)]">
-            Health radar will appear here.
+          <CardContent className="h-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={radarData} outerRadius="70%">
+                <PolarGrid stroke="rgba(148,163,184,0.25)" />
+                <PolarAngleAxis dataKey="metric" tick={{ fill: "var(--text-secondary)", fontSize: 11 }} />
+                <RadarShape dataKey="score" stroke="#6366f1" fill="rgba(99,102,241,0.35)" strokeWidth={2} />
+                <Tooltip
+                  contentStyle={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    fontSize: 12,
+                  }}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
 
@@ -393,6 +451,20 @@ export default function DoctorConsultPage() {
                   {new Date(entry.created_at).toLocaleDateString()} - {entry.department}
                 </div>
               ))
+            )}
+            {patientProfile?.summaries?.length > 0 && (
+              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2">
+                <p className="text-[11px] uppercase tracking-[0.15em] text-[color:var(--text-secondary)] mb-1">
+                  Previous Summaries
+                </p>
+                <div className="flex flex-col gap-2">
+                  {patientProfile.summaries.map((summary: any) => (
+                    <div key={summary.id} className="text-xs text-[color:var(--text-secondary)]">
+                      {summary.summary || "Summary not available"}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
             <Button size="sm" variant="secondary">
               <FileText size={14} />

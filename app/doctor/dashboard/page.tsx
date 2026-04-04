@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Camera, MapPin, QrCode, X, Sparkles } from "lucide-react";
 import Link from "next/link";
@@ -24,6 +24,10 @@ export default function DoctorDashboardPage() {
   const [emergency, setEmergency] = useState<any>(null);
   const [emergencyPatient, setEmergencyPatient] = useState<any>(null);
   const router = useRouter();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const scanRafRef = useRef<number | null>(null);
+  const [scannerError, setScannerError] = useState<string | null>(null);
 
   const handleScan = () => {
     try {
@@ -37,6 +41,69 @@ export default function DoctorDashboardPage() {
     }
     if (scanValue.trim()) {
       router.push(`/doctor/consult/${scanValue.trim()}`);
+    }
+  };
+
+  const stopScanner = () => {
+    if (scanRafRef.current) {
+      cancelAnimationFrame(scanRafRef.current);
+      scanRafRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const startScanner = async () => {
+    setScannerError(null);
+    if (!("BarcodeDetector" in window)) {
+      setScannerError("Barcode scanning is not supported in this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      const detector = new (window as any).BarcodeDetector({
+        formats: ["qr_code"],
+      });
+      const scan = async () => {
+        if (!videoRef.current) return;
+        try {
+          const barcodes = await detector.detect(videoRef.current);
+          if (barcodes && barcodes.length > 0) {
+            const rawValue = barcodes[0].rawValue || "";
+            stopScanner();
+            setOpen(false);
+            try {
+              const parsed = JSON.parse(rawValue);
+              if (parsed.visitId) {
+                router.push(`/doctor/consult/${parsed.visitId}`);
+                return;
+              }
+            } catch {
+              // ignore
+            }
+            if (rawValue) {
+              router.push(`/doctor/consult/${rawValue}`);
+            }
+            return;
+          }
+        } catch {
+          // ignore detection errors
+        }
+        scanRafRef.current = requestAnimationFrame(scan);
+      };
+      scanRafRef.current = requestAnimationFrame(scan);
+    } catch (err: any) {
+      setScannerError(err?.message || "Unable to access camera.");
+      stopScanner();
     }
   };
 
@@ -113,13 +180,33 @@ export default function DoctorDashboardPage() {
           <div>
             <h1 className="text-3xl font-semibold">Doctor Command Center</h1>
             <p className="mt-2 text-[color:var(--text-secondary)]">
-                            AI agent (RAG-trained) is ready to assist with patient insights.
+              AI agent (RAG-trained) is ready to assist with patient insights.
             </p>
           </div>
           <Button size="lg">
             <Sparkles size={16} />
-                          AI agent (RAG-trained) is ready to assist with patient insights.
+            AI Agent (RAG)
           </Button>
+        </div>
+
+        <div className="flex justify-center">
+          <motion.button
+            onClick={() => {
+              setOpen(true);
+              setTimeout(startScanner, 50);
+            }}
+            className="relative grid h-40 w-40 place-items-center rounded-full border border-[color:var(--border)] bg-[color:var(--surface)]"
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ ease }}
+            aria-label="Open QR scanner"
+          >
+            <span className="absolute inset-3 rounded-full border border-dashed border-[color:var(--accent-secondary)] animate-spin [animation-duration:6s]" />
+            <QrCode size={42} />
+            <span className="absolute -bottom-10 text-xs uppercase tracking-[0.3em] text-[color:var(--text-secondary)]">
+              Scan
+            </span>
+          </motion.button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
@@ -178,25 +265,6 @@ export default function DoctorDashboardPage() {
           </CardContent>
         </Card>
 
-        <div className="text-center">
-          <h2 className="text-2xl font-semibold">Scan Patient Token</h2>
-          <p className="mt-2 text-[color:var(--text-secondary)]">
-            Launch the scanner to begin a consultation.
-          </p>
-        </div>
-        <motion.button
-          onClick={() => setOpen(true)}
-          className="relative grid h-40 w-40 place-items-center rounded-full border border-[color:var(--border)] bg-[color:var(--surface)]"
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.97 }}
-          transition={{ ease }}
-        >
-          <span className="absolute inset-3 rounded-full border border-dashed border-[color:var(--accent-secondary)] animate-spin [animation-duration:6s]" />
-          <QrCode size={42} />
-          <span className="absolute -bottom-10 text-xs uppercase tracking-[0.3em] text-[color:var(--text-secondary)]">
-            Scan
-          </span>
-        </motion.button>
       </main>
 
       <AnimatePresence>
@@ -217,28 +285,46 @@ export default function DoctorDashboardPage() {
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">QR Scanner</h2>
                 <button
-                  onClick={() => setOpen(false)}
+                  onClick={() => {
+                    stopScanner();
+                    setOpen(false);
+                  }}
                   className="rounded-full border border-[color:var(--border)] p-2"
                   aria-label="Close"
                 >
                   <X size={16} />
                 </button>
               </div>
-              <div className="relative mt-6 aspect-square rounded-2xl border border-[color:var(--border)] bg-[#0f172a]">
+              <div className="relative mt-6 aspect-square rounded-2xl border border-[color:var(--border)] bg-black">
+                <video
+                  ref={videoRef}
+                  className="absolute inset-0 h-full w-full rounded-2xl object-cover"
+                  muted
+                  playsInline
+                />
                 <div className="absolute inset-6 rounded-2xl border border-dashed border-[color:var(--accent-secondary)]/70" />
-                <div className="absolute inset-0">
-                  <div className="abha-scanline" />
-                </div>
                 <div className="absolute left-6 top-6 h-6 w-6 border-l-2 border-t-2 border-[color:var(--accent-secondary)]" />
                 <div className="absolute right-6 top-6 h-6 w-6 border-r-2 border-t-2 border-[color:var(--accent-secondary)]" />
                 <div className="absolute bottom-6 left-6 h-6 w-6 border-b-2 border-l-2 border-[color:var(--accent-secondary)]" />
                 <div className="absolute bottom-6 right-6 h-6 w-6 border-b-2 border-r-2 border-[color:var(--accent-secondary)]" />
-                <div className="absolute inset-0 grid place-items-center text-xs text-white/60">
+                <div className="absolute inset-0 grid place-items-center text-xs text-white/70">
                   <Camera size={18} />
                   Align QR within frame
                 </div>
               </div>
-              <Button className="mt-6 w-full">Simulate Scan</Button>
+              {scannerError && (
+                <div className="mt-4 rounded-2xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+                  {scannerError}
+                </div>
+              )}
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button variant="secondary" onClick={startScanner}>
+                  Retry Camera
+                </Button>
+                <Button variant="secondary" onClick={() => setOpen(false)}>
+                  Use Manual Entry
+                </Button>
+              </div>
             </motion.div>
           </motion.div>
         )}
@@ -274,13 +360,32 @@ export default function DoctorDashboardPage() {
               {emergencyPatient && (
                 <div className="mt-3 rounded-2xl border border-[color:var(--border)] bg-[color:var(--elevated)] p-3 text-xs">
                   <div className="text-sm font-semibold text-[color:var(--text-primary)]">
-                    {emergencyPatient.name || "Patient"} ({emergencyPatient.age || "--"})
+                    {emergencyPatient.name || "Patient"} ({emergencyPatient.age || "--"} - {emergencyPatient.gender || "--"})
                   </div>
                   <div className="mt-1 text-[color:var(--text-secondary)]">
                     Phone: {emergencyPatient.phone || "Unknown"}
                   </div>
                   <div className="mt-2 text-[color:var(--text-secondary)]">
-                    Latest summary: {emergencyPatient.summaries?.[0]?.summary || "No summary available."}
+                    Previous summaries:
+                    <div className="mt-1 space-y-1">
+                      {(emergencyPatient.summaries || []).length === 0 && (
+                        <div>No summaries available.</div>
+                      )}
+                      {(emergencyPatient.summaries || []).map((summary: any) => (
+                        <div key={summary.id}>{summary.summary || "Summary not available"}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-2 text-[color:var(--text-secondary)]">
+                    Reports:
+                    <div className="mt-1 space-y-1">
+                      {(emergencyPatient.reports || []).length === 0 && (
+                        <div>No reports available.</div>
+                      )}
+                      {(emergencyPatient.reports || []).map((report: any) => (
+                        <div key={report.id}>{report.file_name || "Report"}</div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

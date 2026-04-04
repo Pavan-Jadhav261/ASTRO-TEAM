@@ -29,8 +29,8 @@ const ease = [0.22, 1, 0.36, 1];
 
 const quickActions = [
   { label: "Book Visit", icon: Calendar, href: "/patient/book-visit" },
-  { label: "View Prescriptions", icon: Pill },
-  { label: "My Records", icon: ClipboardList },
+  { label: "View Prescriptions", icon: Pill, href: "/patient/prescriptions" },
+  { label: "My Records", icon: ClipboardList, href: "/patient/records" },
   { label: "Emergency", icon: HeartPulse, danger: true },
 ];
 
@@ -288,7 +288,14 @@ export default function PatientDashboardPage() {
                 </AccordionItem>
               </Accordion>
               <Separator className="my-4" />
-              <Button size="sm">Voice Agent</Button>
+              <div className="flex flex-wrap gap-3">
+                <Button size="sm">Voice Agent</Button>
+                <Link href="/patient/summaries">
+                  <Button size="sm" variant="secondary">
+                    Previous Summaries
+                  </Button>
+                </Link>
+              </div>
             </CardContent>
           </Card>
         </div>

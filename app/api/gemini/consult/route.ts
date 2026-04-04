@@ -1,40 +1,16 @@
 import { NextResponse } from "next/server";
+import { GoogleGenAI, Type, createPartFromUri, createUserContent } from "@google/genai";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
 
 export const runtime = "nodejs";
-
-const GEMINI_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1beta/models";
-
-function toBase64(buffer: ArrayBuffer) {
-  return Buffer.from(buffer).toString("base64");
-}
 
 type FunctionCall = {
   name: string;
   args?: Record<string, any>;
+  id?: string;
 };
-
-function runTool(call: FunctionCall) {
-  if (call.name === "triage_summary") {
-    const symptoms = String(call.args?.symptoms || "Not provided");
-    return {
-      summary: `Key symptoms: ${symptoms}.`,
-      riskLevel: "medium",
-      suggestedNextStep: "Proceed with vitals, ECG, and lab screening.",
-    };
-  }
-  if (call.name === "recommend_tests") {
-    return {
-      tests: [
-        "CBC",
-        "ECG",
-        "Chest X-ray",
-        "Blood Pressure Monitoring",
-      ],
-    };
-  }
-  return { message: "No tool output." };
-}
 
 export async function POST(request: Request) {
   const apiKey = process.env.GOOGLE_API_KEY || "";
@@ -52,99 +28,109 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Audio file is required." }, { status: 400 });
   }
 
-  const audioBuffer = await audio.arrayBuffer();
-  const base64Audio = toBase64(audioBuffer);
+  const ai = new GoogleGenAI({ apiKey });
   const mimeType = audio.type || "audio/webm";
+  const buffer = Buffer.from(await audio.arrayBuffer());
+  const tempPath = path.join(os.tmpdir(), `consult-${Date.now()}.webm`);
+  await fs.writeFile(tempPath, buffer);
 
-  const prompt =
-    "Transcribe the audio. Then call triage_summary and recommend_tests. " +
-    "Use the transcript as symptoms. " +
-    (notes ? `Context notes: ${notes}` : "");
+  let transcript = "";
+  let functionCalls: FunctionCall[] = [];
 
-  const payload = {
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: prompt },
+  try {
+    const uploaded = await ai.files.upload({
+      file: tempPath,
+      config: { mimeType },
+    });
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: createUserContent([
+        createPartFromUri(uploaded.uri, uploaded.mimeType || mimeType),
+        `Transcribe this consultation audio and extract only medical information. ${notes ? `Context: ${notes}` : ""}`,
+      ]),
+      config: {
+        tools: [
           {
-            inlineData: {
-              mimeType,
-              data: base64Audio,
-            },
+            functionDeclarations: [
+              {
+                name: "clinical_summary",
+                description: "Extract the medical summary and key findings.",
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    chiefComplaint: { type: Type.STRING },
+                    findings: { type: Type.STRING },
+                    diagnosis: { type: Type.STRING },
+                    plan: { type: Type.STRING },
+                  },
+                  required: ["chiefComplaint", "findings", "diagnosis", "plan"],
+                },
+              },
+              {
+                name: "extract_prescriptions",
+                description: "Extract prescriptions mentioned in the conversation.",
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    prescriptions: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          medicine: { type: Type.STRING },
+                          dosage: { type: Type.STRING },
+                          duration: { type: Type.STRING },
+                        },
+                        required: ["medicine"],
+                      },
+                    },
+                  },
+                  required: ["prescriptions"],
+                },
+              },
+              {
+                name: "health_radar_scores",
+                description: "Estimate health radar scores (0-100).",
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    cardio: { type: Type.NUMBER },
+                    mental: { type: Type.NUMBER },
+                    physical: { type: Type.NUMBER },
+                    nutrition: { type: Type.NUMBER },
+                    risk: { type: Type.NUMBER },
+                  },
+                  required: ["cardio", "mental", "physical", "nutrition", "risk"],
+                },
+              },
+            ],
           },
         ],
       },
-    ],
-    tools: [
-      {
-        functionDeclarations: [
-          {
-            name: "triage_summary",
-            description: "Summarize the clinical story and risk level.",
-            parameters: {
-              type: "OBJECT",
-              properties: {
-                symptoms: { type: "STRING" },
-                duration: { type: "STRING" },
-              },
-              required: ["symptoms"],
-            },
-          },
-          {
-            name: "recommend_tests",
-            description: "Suggest immediate diagnostic tests.",
-            parameters: {
-              type: "OBJECT",
-              properties: {
-                symptoms: { type: "STRING" },
-              },
-              required: ["symptoms"],
-            },
-          },
-        ],
-      },
-    ],
-  };
+    });
 
-  const response = await fetch(
-    `${GEMINI_ENDPOINT}/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify(payload),
-    }
-  );
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
+    transcript = response.text || "";
+    functionCalls = response.functionCalls || [];
+  } catch (error: any) {
     return NextResponse.json(
-      { error: data?.error?.message || "Gemini request failed." },
+      { error: error?.message || "Gemini request failed." },
       { status: 500 }
     );
+  } finally {
+    await fs.unlink(tempPath).catch(() => null);
   }
 
-  const parts = data?.candidates?.[0]?.content?.parts || [];
-  const transcript = parts
-    .filter((part: any) => part?.text)
-    .map((part: any) => part.text)
-    .join("\n");
-
-  const calls = parts
-    .filter((part: any) => part?.functionCall)
-    .map((part: any) => part.functionCall);
-
-  const toolResults = (calls as FunctionCall[]).map((call) => ({
-    name: call.name,
-    result: runTool(call),
-  }));
+  const analysis: Record<string, any> = {};
+  for (const call of functionCalls) {
+    if (call.name === "clinical_summary") analysis.summary = call.args;
+    if (call.name === "extract_prescriptions") analysis.prescriptions = call.args?.prescriptions || [];
+    if (call.name === "health_radar_scores") analysis.radar = call.args;
+  }
 
   return NextResponse.json({
     transcript,
-    functionCalls: calls,
-    toolResults,
+    functionCalls,
+    analysis,
   });
 }
