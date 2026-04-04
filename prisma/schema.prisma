@@ -31,6 +31,8 @@ model Patient {
   name        String?
   age         Int?
   gender      String?
+  allergies   String?
+  guardians   String[]   @default([])
   created_at  DateTime   @default(now())
   visits      OpdVisit[]
   prescriptions Prescription[]
@@ -67,8 +69,11 @@ model DoctorSummary {
   patient_id  String
   visit_id    String?
   summary     String
+  chiefComplaint String?
+  findings    String?
   diagnosis   String?
   plan        String?
+  radar_scores Json?
   created_at  DateTime @default(now())
 
   patient     Patient  @relation(fields: [patient_id], references: [id])
@@ -79,6 +84,7 @@ model PatientReport {
   id          String   @id @default(cuid())
   patient_id  String
   file_name   String
+  storage_path String
   file_url    String?
   created_at  DateTime @default(now())
 
@@ -90,10 +96,25 @@ model EmergencyAlert {
   patient_id  String
   reason      String
   location    String?
+  symptoms    String?
+  summary     String?
+  created_by  String?
   status      String   @default("open")
   created_at  DateTime @default(now())
 
   patient     Patient  @relation(fields: [patient_id], references: [id])
 
   @@map("emergency_alerts")
+}
+
+model NotificationSubscription {
+  id          String   @id @default(cuid())
+  endpoint    String   @unique
+  p256dh      String
+  auth        String
+  latitude    Float?
+  longitude   Float?
+  patient_id  String?
+  updated_at  DateTime @updatedAt
+  created_at  DateTime @default(now())
 }

@@ -59,6 +59,12 @@ export default function PatientSummariesPage() {
                 <p className="mt-2 text-xs text-[color:var(--text-secondary)]">
                   {summary.summary || "Summary not available"}
                 </p>
+                {(summary.diagnosis || summary.plan) && (
+                  <div className="mt-2 text-[11px] text-[color:var(--text-secondary)]">
+                    {summary.diagnosis ? `Diagnosis: ${summary.diagnosis}` : ""}
+                    {summary.plan ? ` · Plan: ${summary.plan}` : ""}
+                  </div>
+                )}
               </div>
             ))}
             <Link href="/patient/dashboard">

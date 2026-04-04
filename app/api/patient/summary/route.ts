@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { cookies } from "next/headers";
+import { verifyToken } from "@/lib/auth";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const patientId = searchParams.get("patientId") || "";
+  const patientIdParam = searchParams.get("patientId") || "";
+  const cookieStore = await cookies();
+  const token = cookieStore.get("abha_patient_token")?.value;
+  const payload = token ? await verifyToken(token).catch(() => null) : null;
+  const patientId = patientIdParam || payload?.sub || "";
   if (!patientId) {
     return NextResponse.json({ error: "Missing patientId." }, { status: 400 });
   }

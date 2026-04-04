@@ -484,8 +484,13 @@ export default function DoctorDashboardPage() {
                 </button>
               </div>
               <div className="mt-3 text-sm text-[color:var(--text-secondary)]">
-                {emergency.reason || "Urgent assistance requested."}
+                {emergency.reason || emergency.summary || "Urgent assistance requested."}
               </div>
+              {emergency.symptoms && (
+                <div className="mt-2 text-xs text-[color:var(--text-secondary)]">
+                  Symptoms: {emergency.symptoms}
+                </div>
+              )}
               {emergencyPatient && (
                 <div className="mt-3 rounded-2xl border border-[color:var(--border)] bg-[color:var(--elevated)] p-3 text-xs">
                   <div className="text-sm font-semibold text-[color:var(--text-primary)]">

@@ -63,6 +63,7 @@ export default function DoctorConsultPage() {
   const [aiSummary, setAiSummary] = useState<any>(null);
   const [aiPrescriptions, setAiPrescriptions] = useState<any[]>([]);
   const [radarScores, setRadarScores] = useState<any>(null);
+  const [allergies, setAllergies] = useState<string[]>([]);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [timer, setTimer] = useState(0);
   const [sessionTimer, setSessionTimer] = useState(0);
@@ -151,7 +152,30 @@ export default function DoctorConsultPage() {
           setAiSummary(data.analysis?.summary || null);
           setAiPrescriptions(data.analysis?.prescriptions || []);
           setRadarScores(data.analysis?.radar || null);
+          setAllergies(data.analysis?.allergies || []);
           setRecordingState("done");
+
+          if (visit?.patientId) {
+            await fetch("/api/doctor/consultation/save-summary", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                patientId: visit.patientId,
+                visitId: visit.visitId || visitId,
+                summary:
+                  [data.analysis?.summary?.chiefComplaint, data.analysis?.summary?.diagnosis, data.analysis?.summary?.plan]
+                    .filter(Boolean)
+                    .join(" · ") || "Summary not available",
+                chiefComplaint: data.analysis?.summary?.chiefComplaint || "",
+                findings: data.analysis?.summary?.findings || "",
+                diagnosis: data.analysis?.summary?.diagnosis || "",
+                plan: data.analysis?.summary?.plan || "",
+                prescriptions: data.analysis?.prescriptions || [],
+                radar: data.analysis?.radar || null,
+                allergies: data.analysis?.allergies || [],
+              }),
+            }).catch(() => null);
+          }
         } catch (err: any) {
           setRecordError(err?.message || "Failed to process audio.");
           setRecordingState("done");
@@ -172,6 +196,10 @@ export default function DoctorConsultPage() {
   const prescriptions = patientProfile?.prescriptions || [];
   const visits = patientProfile?.visits || [];
   const reports = patientProfile?.reports || [];
+  const patientAllergies = patientProfile?.allergies
+    ? patientProfile.allergies.split(",").map((item: string) => item.trim()).filter(Boolean)
+    : [];
+  const allergyList = Array.from(new Set([...(patientAllergies || []), ...(allergies || [])]));
   const displayPrescriptions = aiPrescriptions.length > 0 ? aiPrescriptions : prescriptions;
   const radarData = radarScores
     ? [
@@ -276,6 +304,14 @@ export default function DoctorConsultPage() {
                     </p>
                   </div>
                 )}
+                {allergyList.length > 0 && (
+                  <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.15em] text-red-300 mb-1">
+                      Allergies
+                    </p>
+                    <p className="text-xs text-red-100">{allergyList.join(", ")}</p>
+                  </div>
+                )}
                 {visit?.symptoms && (
                   <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2">
                     <p className="text-xs uppercase tracking-[0.15em] text-[color:var(--text-secondary)] mb-1">Symptoms</p>
@@ -304,7 +340,7 @@ export default function DoctorConsultPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-4 overflow-y-auto" style={{ maxHeight: "calc(100% - 60px)" }}>
             {/* Waveform visualizer */}
-            <div className="flex h-20 items-end gap-1" aria-hidden={reduceMotion ?? undefined}>
+            <div className="flex h-20 items-end gap-1" aria-hidden={!!reduceMotion}>
               {Array.from({ length: 32 }).map((_, index) => (
                 <motion.span
                   key={index}
@@ -467,20 +503,20 @@ export default function DoctorConsultPage() {
                 </div>
               ))
             )}
-            {patientProfile?.summaries?.length > 0 && (
-              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2">
-                <p className="text-[11px] uppercase tracking-[0.15em] text-[color:var(--text-secondary)] mb-1">
-                  Previous Summaries
-                </p>
-                <div className="flex flex-col gap-2">
-                  {patientProfile.summaries.map((summary: any) => (
-                    <div key={summary.id} className="text-xs text-[color:var(--text-secondary)]">
-                      {summary.summary || "Summary not available"}
+                {patientProfile?.summaries?.length > 0 && (
+                  <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.15em] text-[color:var(--text-secondary)] mb-1">
+                      Previous Summaries
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      {patientProfile.summaries.map((summary: any) => (
+                        <div key={summary.id} className="text-xs text-[color:var(--text-secondary)]">
+                          {summary.summary || "Summary not available"}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                  </div>
+                )}
             <Button size="sm" variant="secondary">
               <FileText size={14} />
               View full history

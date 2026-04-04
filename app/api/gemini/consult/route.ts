@@ -106,6 +106,20 @@ export async function POST(request: Request) {
                   required: ["cardio", "mental", "physical", "nutrition", "risk"],
                 },
               },
+              {
+                name: "extract_allergies",
+                description: "Extract any allergies mentioned.",
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    allergies: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                    },
+                  },
+                  required: ["allergies"],
+                },
+              },
             ],
           },
         ],
@@ -128,6 +142,7 @@ export async function POST(request: Request) {
     if (call.name === "clinical_summary") analysis.summary = call.args;
     if (call.name === "extract_prescriptions") analysis.prescriptions = call.args?.prescriptions || [];
     if (call.name === "health_radar_scores") analysis.radar = call.args;
+    if (call.name === "extract_allergies") analysis.allergies = call.args?.allergies || [];
   }
 
   let parsedText: any = null;
@@ -215,6 +230,20 @@ export async function POST(request: Request) {
                     required: ["cardio", "mental", "physical", "nutrition", "risk"],
                   },
                 },
+                {
+                  name: "extract_allergies",
+                  description: "Extract any allergies mentioned.",
+                  parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                      allergies: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING },
+                      },
+                    },
+                    required: ["allergies"],
+                  },
+                },
               ],
             },
           ],
@@ -228,6 +257,9 @@ export async function POST(request: Request) {
           analysis.prescriptions = call.args?.prescriptions || [];
         }
         if (call.name === "health_radar_scores" && !analysis.radar) analysis.radar = call.args;
+        if (call.name === "extract_allergies" && !analysis.allergies) {
+          analysis.allergies = call.args?.allergies || [];
+        }
       }
     } catch {
       // ignore follow-up failures
@@ -255,6 +287,18 @@ export async function POST(request: Request) {
       nutrition: clamp(nutrition),
       risk: clamp(risk),
     };
+  }
+
+  if (!analysis.allergies && transcript) {
+    const match = transcript.match(/allerg(?:y|ies)\s*(to|:)?\s*([^\.\n]+)/i);
+    if (match && match[2]) {
+      analysis.allergies = match[2]
+        .split(/,|and/gi)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    } else {
+      analysis.allergies = [];
+    }
   }
 
   return NextResponse.json({
