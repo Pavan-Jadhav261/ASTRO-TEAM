@@ -153,7 +153,7 @@ export default function DoctorConsultPage() {
 
   return (
     <main className="relative min-h-screen abha-mesh neo-bg px-4 py-4 md:px-6 md:py-6 text-[15px] md:text-[16px]">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between">
+      <header className="mx-auto flex w-full max-w-7xl items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/doctor/dashboard" className="text-[color:var(--text-secondary)]">
             <ArrowLeft size={18} />
@@ -173,211 +173,252 @@ export default function DoctorConsultPage() {
         </div>
       </header>
 
+      {/* ── Dashboard grid matching wireframe ──
+           Layout:
+           [Patient Snapshot]  [AI Live Consultancy ]  [Health Radar ]
+           [History         ]  [     (spans 2 rows) ]  [Digital Twin  ]
+      */}
       <section
-        className="mx-auto mt-6 grid w-full max-w-6xl gap-4 lg:grid-cols-[280px,1fr,280px]"
+        className="mx-auto mt-6 w-full max-w-7xl"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1.8fr 1fr",
+          gridTemplateRows: "1fr 1fr",
+          gap: "16px",
+          height: "calc(100vh - 120px)",
+        }}
         aria-label="Consultation layout"
       >
-        <div className="flex flex-col gap-4">
-          <Card className="neo-card h-[calc(50%-8px)]" aria-labelledby="patient-snapshot-title">
-            <CardHeader>
-              <CardTitle id="patient-snapshot-title">Patient Snapshot</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 text-sm">
-              {isLoading ? (
-                <Skeleton className="h-6 w-2/3" />
-              ) : (
-                <>
-                  <div className="flex items-center gap-3">
-                    <div className="grid h-12 w-12 place-items-center rounded-full bg-[color:var(--elevated)] text-sm font-semibold">
-                      {visit?.name ? visit.name.slice(0, 2).toUpperCase() : "NA"}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-[color:var(--text-primary)]">
-                        {visit?.name || "No data available"}
-                      </p>
-                      <p className="text-xs text-[color:var(--text-secondary)]">
-                        {visit?.age ? `${visit.age}y` : "--"} - {visit?.gender || "--"}
-                      </p>
-                      <p className="text-xs text-[color:var(--text-secondary)]">{visit?.phone || "--"}</p>
-                    </div>
+        {/* ── ROW 1, COL 1: Patient Snapshot ── */}
+        <Card
+          className="neo-card"
+          style={{ gridColumn: 1, gridRow: 1, overflow: "hidden" }}
+          aria-labelledby="patient-snapshot-title"
+        >
+          <CardHeader>
+            <CardTitle id="patient-snapshot-title">Patient Snapshot</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 text-sm overflow-y-auto" style={{ maxHeight: "calc(100% - 60px)" }}>
+            {isLoading ? (
+              <Skeleton className="h-6 w-2/3" />
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[color:var(--elevated)] text-sm font-semibold">
+                    {visit?.name ? visit.name.slice(0, 2).toUpperCase() : "NA"}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {visit?.department ? (
-                      <Badge variant="accent">{visit.department}</Badge>
-                    ) : (
-                      <Badge>Department NA</Badge>
-                    )}
-                    {visit?.tokenNumber ? <Badge>Token {visit.tokenNumber}</Badge> : <Badge>Token NA</Badge>}
+                  <div>
+                    <p className="text-sm font-semibold text-[color:var(--text-primary)]">
+                      {visit?.name || "No data available"}
+                    </p>
+                    <p className="text-xs text-[color:var(--text-secondary)]">
+                      {visit?.age ? `${visit.age}y` : "--"} - {visit?.gender || "--"}
+                    </p>
+                    <p className="text-xs text-[color:var(--text-secondary)]">{visit?.phone || "--"}</p>
                   </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="neo-card h-[calc(50%-8px)]" aria-labelledby="history-title">
-            <CardHeader>
-              <CardTitle id="history-title">History</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2 text-xs text-[color:var(--text-secondary)]">
-              {visits.length === 0 ? (
-                <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2">
-                  No history yet.
                 </div>
-              ) : (
-                visits.map((entry: any) => (
-                  <div
-                    key={entry.visit_id}
-                    className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2"
-                  >
-                    {new Date(entry.created_at).toLocaleDateString()} - {entry.department}
+                <div className="flex flex-wrap gap-2">
+                  {visit?.department ? (
+                    <Badge variant="accent">{visit.department}</Badge>
+                  ) : (
+                    <Badge>Department NA</Badge>
+                  )}
+                  {visit?.tokenNumber ? <Badge>Token {visit.tokenNumber}</Badge> : <Badge>Token NA</Badge>}
+                </div>
+                {visit?.symptoms && (
+                  <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.15em] text-[color:var(--text-secondary)] mb-1">Symptoms</p>
+                    <p className="text-xs text-[color:var(--text-primary)]">{visit.symptoms}</p>
                   </div>
-                ))
-              )}
-              <Button size="sm" variant="secondary">
-                <FileText size={14} />
-                View full history
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="flex flex-col gap-4">
-          <Card className="neo-card h-full" aria-labelledby="consult-title">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle id="consult-title">AI Live Consultancy</CardTitle>
-                <span className="flex items-center gap-2 text-xs text-[color:var(--text-secondary)]">
-                  <Clock size={12} />
-                  {formatTime(timer)}
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent className="flex h-full flex-col gap-4">
-              <div className="flex h-20 items-end gap-1" aria-hidden={reduceMotion}>
-                {Array.from({ length: 32 }).map((_, index) => (
-                  <motion.span
-                    key={index}
-                    className="w-[3px] rounded-full bg-gradient-to-t from-[color:var(--accent-primary)] to-[color:var(--accent-secondary)]"
-                    animate={reduceMotion ? { height: 12 } : { height: [8, 36, 14] }}
-                    transition={
-                      reduceMotion
-                        ? { duration: 0 }
-                        : { duration: 1.4, repeat: Infinity, ease: "easeInOut", delay: index * 0.03 }
-                    }
-                  />
-                ))}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                {recordingState !== "recording" ? (
-                  <Button size="lg" onClick={startRecording} disabled={recordingState === "summarizing"}>
-                    <Mic size={16} />
-                    {recordingState === "summarizing" ? "Processing..." : "Record"}
-                  </Button>
-                ) : (
-                  <Button size="lg" variant="secondary" onClick={stopRecording}>
-                    <Play size={16} />
-                    Stop
-                  </Button>
                 )}
-                <Button variant="secondary" size="lg" disabled>
-                  <Pause size={16} />
-                  Pause
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── ROW 1–2, COL 2: AI Live Consultancy — spans both rows ── */}
+        <Card
+          className="neo-card"
+          style={{ gridColumn: 2, gridRow: "1 / 3", overflow: "hidden" }}
+          aria-labelledby="consult-title"
+        >
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle id="consult-title">AI Live Consultancy</CardTitle>
+              <span className="flex items-center gap-2 text-xs text-[color:var(--text-secondary)]">
+                <Clock size={12} />
+                {formatTime(timer)}
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 overflow-y-auto" style={{ maxHeight: "calc(100% - 60px)" }}>
+            {/* Waveform visualizer */}
+            <div className="flex h-20 items-end gap-1" aria-hidden={reduceMotion ?? undefined}>
+              {Array.from({ length: 32 }).map((_, index) => (
+                <motion.span
+                  key={index}
+                  className="w-[3px] rounded-full bg-gradient-to-t from-[color:var(--accent-primary)] to-[color:var(--accent-secondary)]"
+                  animate={reduceMotion ? { height: 12 } : { height: [8, 36, 14] }}
+                  transition={
+                    reduceMotion
+                      ? { duration: 0 }
+                      : { duration: 1.4, repeat: Infinity, ease: "easeInOut", delay: index * 0.03 }
+                  }
+                />
+              ))}
+            </div>
+
+            {/* Controls */}
+            <div className="flex flex-wrap items-center gap-3">
+              {recordingState !== "recording" ? (
+                <Button size="lg" onClick={startRecording} disabled={recordingState === "summarizing"}>
+                  <Mic size={16} />
+                  {recordingState === "summarizing" ? "Processing..." : "Record"}
                 </Button>
-              </div>
+              ) : (
+                <Button size="lg" variant="secondary" onClick={stopRecording}>
+                  <Play size={16} />
+                  Stop
+                </Button>
+              )}
+              <Button variant="secondary" size="lg" disabled>
+                <Pause size={16} />
+                Pause
+              </Button>
+            </div>
 
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm leading-6">
-                <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
-                  Live Transcript
-                </p>
-                <p className="text-[color:var(--text-secondary)]">
-                  {transcript || "Start recording to generate a transcript."}
-                </p>
-                {recordError && (
-                  <p className="mt-3 text-xs text-red-400">{recordError}</p>
-                )}
-              </div>
+            {/* Live Transcript */}
+            <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm leading-6">
+              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
+                Live Transcript
+              </p>
+              <p className="text-[color:var(--text-secondary)]">
+                {transcript || "Start recording to generate a transcript."}
+              </p>
+              {recordError && (
+                <p className="mt-3 text-xs text-red-400">{recordError}</p>
+              )}
+            </div>
 
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--elevated)] p-4 text-sm">
-                <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
-                  Gemini Tools Output
-                </p>
-                {toolResults.length === 0 ? (
-                  <p className="text-[color:var(--text-secondary)]">Waiting for tool calls.</p>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    {toolResults.map((tool, index) => (
-                      <div
-                        key={index}
-                        className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2"
-                      >
-                        <p className="text-xs font-semibold">{tool.name}</p>
-                        <pre className="mt-1 whitespace-pre-wrap text-xs text-[color:var(--text-secondary)]">
+            {/* Gemini Tools Output */}
+            <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--elevated)] p-4 text-sm">
+              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
+                Gemini Tools Output
+              </p>
+              {toolResults.length === 0 ? (
+                <p className="text-[color:var(--text-secondary)]">Waiting for tool calls.</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {toolResults.map((tool, index) => (
+                    <div
+                      key={index}
+                      className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2"
+                    >
+                      <p className="text-xs font-semibold">{tool.name}</p>
+                      <pre className="mt-1 whitespace-pre-wrap text-xs text-[color:var(--text-secondary)]">
 {JSON.stringify(tool.result, null, 2)}
-                        </pre>
-                      </div>
-                    ))}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Prescriptions */}
+            <div className="mt-auto rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-[color:var(--text-primary)]">
+                <Pill size={16} className="text-[color:var(--accent-secondary)]" />
+                Prescriptions
+              </p>
+              <div className="flex flex-col gap-2 text-sm text-[color:var(--text-secondary)]">
+                {prescriptions.length === 0 ? (
+                  <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--elevated)] px-3 py-2">
+                    No prescriptions yet.
                   </div>
+                ) : (
+                  prescriptions.map((rx: any) => (
+                    <div
+                      key={rx.id}
+                      className="rounded-xl border border-[color:var(--border)] bg-[color:var(--elevated)] px-4 py-3"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Pill size={14} className="text-[color:var(--accent-secondary)]" />
+                        <span className="font-medium">{rx.medicine}</span>
+                      </div>
+                      <p className="text-xs text-[color:var(--text-secondary)]">
+                        {rx.dosage || "Dosage NA"} - {rx.duration || "Duration NA"}
+                      </p>
+                    </div>
+                  ))
                 )}
               </div>
+            </div>
+          </CardContent>
+        </Card>
 
-              <div className="mt-auto">
-                <Card className="neo-card">
-                  <CardHeader>
-                    <CardTitle>Prescriptions</CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-2 text-sm text-[color:var(--text-secondary)]">
-                    {prescriptions.length === 0 ? (
-                      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2">
-                        No prescriptions yet.
-                      </div>
-                    ) : (
-                      prescriptions.map((rx: any) => (
-                        <div
-                          key={rx.id}
-                          className="rounded-xl border border-[color:var(--border)] bg-[color:var(--elevated)] px-4 py-3"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Pill size={14} className="text-[color:var(--accent-secondary)]" />
-                            <span className="font-medium">{rx.medicine}</span>
-                          </div>
-                          <p className="text-xs text-[color:var(--text-secondary)]">
-                            {rx.dosage || "Dosage NA"} - {rx.duration || "Duration NA"}
-                          </p>
-                        </div>
-                      ))
-                    )}
-                  </CardContent>
-                </Card>
+        {/* ── ROW 1, COL 3: Health Radar ── */}
+        <Card
+          className="neo-card"
+          style={{ gridColumn: 3, gridRow: 1, overflow: "hidden" }}
+          aria-labelledby="health-radar-title"
+        >
+          <CardHeader>
+            <CardTitle id="health-radar-title">Health Radar</CardTitle>
+          </CardHeader>
+          <CardContent className="flex h-full flex-col justify-center text-sm text-[color:var(--text-secondary)]">
+            Health radar will appear here.
+          </CardContent>
+        </Card>
+
+        {/* ── ROW 2, COL 1: History ── */}
+        <Card
+          className="neo-card"
+          style={{ gridColumn: 1, gridRow: 2, overflow: "hidden" }}
+          aria-labelledby="history-title"
+        >
+          <CardHeader>
+            <CardTitle id="history-title">History</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 text-xs text-[color:var(--text-secondary)] overflow-y-auto" style={{ maxHeight: "calc(100% - 60px)" }}>
+            {visits.length === 0 ? (
+              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2">
+                No history yet.
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            ) : (
+              visits.map((entry: any) => (
+                <div
+                  key={entry.visit_id}
+                  className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2"
+                >
+                  {new Date(entry.created_at).toLocaleDateString()} - {entry.department}
+                </div>
+              ))
+            )}
+            <Button size="sm" variant="secondary">
+              <FileText size={14} />
+              View full history
+            </Button>
+          </CardContent>
+        </Card>
 
-        <div className="flex flex-col gap-4">
-          <Card className="neo-card h-[calc(50%-8px)]" aria-labelledby="health-radar-title">
-            <CardHeader>
-              <CardTitle id="health-radar-title">Health Radar</CardTitle>
-            </CardHeader>
-            <CardContent className="flex h-full flex-col justify-center text-sm text-[color:var(--text-secondary)]">
-              Health radar will appear here.
-            </CardContent>
-          </Card>
-
-          <Card className="neo-card h-[calc(50%-8px)]" aria-labelledby="digital-twin-title">
-            <CardHeader>
-              <CardTitle id="digital-twin-title">Digital Twin</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-[color:var(--text-secondary)]">
-              Preview the patient model and overlays.
-              <div className="mt-3">
-                <Link href="/patient/digital-twin" className="text-[color:var(--accent-secondary)]">
-                  Open Digital Twin
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* ── ROW 2, COL 3: Digital Twin ── */}
+        <Card
+          className="neo-card"
+          style={{ gridColumn: 3, gridRow: 2, overflow: "hidden" }}
+          aria-labelledby="digital-twin-title"
+        >
+          <CardHeader>
+            <CardTitle id="digital-twin-title">Digital Twin</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-[color:var(--text-secondary)]">
+            Preview the patient model and overlays.
+            <div className="mt-3">
+              <Link href="/patient/digital-twin" className="text-[color:var(--accent-secondary)]">
+                Open Digital Twin
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
       </section>
     </main>
   );
