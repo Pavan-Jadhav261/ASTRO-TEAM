@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { notifyTelegramHelpers } from "@/lib/telegram";
 import { GoogleGenAI, createPartFromUri, createUserContent } from "@google/genai";
 import fs from "fs/promises";
 import os from "os";
@@ -60,6 +61,14 @@ export async function POST(request: Request) {
         created_by: "other",
       },
     });
+
+    const patient = await prisma.patient.findUnique({ where: { id: patientId } });
+    await notifyTelegramHelpers(
+      patientId,
+      `🚨 Emergency alert for ${patient?.name || "patient"}. Reported: ${summary}${
+        location ? `\nLocation: https://www.google.com/maps?q=${location}` : ""
+      }`
+    );
 
     if (location) {
       const origin = new URL(request.url).origin;

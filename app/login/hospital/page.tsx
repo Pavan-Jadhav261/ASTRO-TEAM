@@ -16,7 +16,10 @@ import { opdPills } from "@/components/neo/mock-data";
 const ease = [0.22, 1, 0.36, 1];
 
 export default function HospitalLoginPage() {
+  const [isRegister, setIsRegister] = useState(false);
   const [hospitalId, setHospitalId] = useState("");
+  const [hospitalName, setHospitalName] = useState("");
+  const [hospitalAddress, setHospitalAddress] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -32,10 +35,39 @@ export default function HospitalLoginPage() {
         body: JSON.stringify({ hospitalId, password }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Login failed.");
+      if (!response.ok) {
+        if (data?.code === "NOT_FOUND") {
+          setIsRegister(true);
+        }
+        throw new Error(data.error || "Login failed.");
+      }
       router.push("/hospital/opd");
     } catch (err: any) {
       setError(err?.message || "Login failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const response = await fetch("/api/auth/hospital/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hospitalId,
+          name: hospitalName,
+          address: hospitalAddress,
+          password,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Registration failed.");
+      router.push("/hospital/opd");
+    } catch (err: any) {
+      setError(err?.message || "Registration failed.");
     } finally {
       setLoading(false);
     }
@@ -106,15 +138,39 @@ export default function HospitalLoginPage() {
           transition={{ duration: 0.7, ease, delay: 0.1 }}
           className="flex items-center"
         >
-          <Card className="neo-card w-full">
-            <CardHeader>
-              <CardTitle>Enter OPD System</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <label className="text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
-                  Hospital ID
-                </label>
+            <Card className="neo-card w-full">
+              <CardHeader>
+                <CardTitle>{isRegister ? "Register Hospital" : "Enter OPD System"}</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                {isRegister && (
+                  <>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
+                        Hospital Name
+                      </label>
+                      <Input
+                        placeholder="VIMS Ballari"
+                        value={hospitalName}
+                        onChange={(event) => setHospitalName(event.target.value)}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
+                        Address
+                      </label>
+                      <Input
+                        placeholder="Ballari, Karnataka"
+                        value={hospitalAddress}
+                        onChange={(event) => setHospitalAddress(event.target.value)}
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
+                    Hospital ID
+                  </label>
                 <Input
                   className="font-mono text-lg"
                   placeholder="ABHA-GOV-0184"
@@ -133,17 +189,41 @@ export default function HospitalLoginPage() {
                   onChange={(event) => setPassword(event.target.value)}
                 />
               </div>
-              <Button size="lg" className="mt-2" onClick={handleLogin} disabled={loading}>
-                {loading ? "Signing in..." : "Enter OPD System"}
-              </Button>
-              {error && (
-                <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-                  {error}
+                <Button size="lg" className="mt-2" onClick={handleLogin} disabled={loading}>
+                  {loading ? "Signing in..." : "Enter OPD System"}
+                </Button>
+                {isRegister && (
+                  <Button size="lg" variant="secondary" onClick={handleRegister} disabled={loading}>
+                    {loading ? "Registering..." : "Register Hospital"}
+                  </Button>
+                )}
+                {error && (
+                  <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+                    {error}
+                  </div>
+                )}
+                <div className="text-xs text-[color:var(--text-secondary)]">
+                  {isRegister ? (
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => setIsRegister(false)}
+                    >
+                      Already registered? Sign in
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => setIsRegister(true)}
+                    >
+                      New hospital? Register here
+                    </button>
+                  )}
                 </div>
-              )}
-              <p className="text-xs text-[color:var(--text-secondary)]">
-                Secure access is monitored and audited.
-              </p>
+                <p className="text-xs text-[color:var(--text-secondary)]">
+                  Secure access is monitored and audited.
+                </p>
             </CardContent>
           </Card>
         </motion.div>

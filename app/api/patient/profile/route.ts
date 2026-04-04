@@ -21,7 +21,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const patient = await prisma.patient.findUnique({ where: { id: patientId } });
+    const patient = await prisma.patient.findUnique({
+      where: { id: patientId },
+      include: { helpers: true },
+    });
     if (!patient) {
       return NextResponse.json({ error: "Patient not found." }, { status: 404 });
     }

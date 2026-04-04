@@ -39,6 +39,7 @@ model Patient {
   summaries   DoctorSummary[]
   reports     PatientReport[]
   emergencies EmergencyAlert[]
+  helpers     PatientHelper[]
 }
 
 model Doctor {
@@ -46,6 +47,15 @@ model Doctor {
   username      String   @unique
   name          String
   department    String
+  password_hash String
+  created_at    DateTime @default(now())
+}
+
+model Hospital {
+  id            String   @id @default(cuid())
+  hospital_id   String   @unique
+  name          String
+  address       String?
   password_hash String
   created_at    DateTime @default(now())
 }
@@ -117,4 +127,15 @@ model NotificationSubscription {
   patient_id  String?
   updated_at  DateTime @updatedAt
   created_at  DateTime @default(now())
+}
+
+model PatientHelper {
+  id         String   @id @default(cuid())
+  patient_id String
+  chat_id    String   @unique
+  username   String?
+  first_name String?
+  created_at DateTime @default(now())
+
+  patient    Patient  @relation(fields: [patient_id], references: [id])
 }

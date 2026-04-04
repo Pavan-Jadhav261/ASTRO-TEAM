@@ -12,10 +12,18 @@ function normalizeUrl(rawUrl: string) {
   return livekitUrl;
 }
 
+function isPatientRoom(roomName: string) {
+  return roomName.startsWith("elderly-assistant-") || roomName.startsWith("patient-");
+}
+
 async function buildToken(roomName: string, identity: string) {
-  const apiKey = (process.env.LIVEKIT_API_KEY || "").trim();
-  const apiSecret = (process.env.LIVEKIT_API_SECRET || "").trim();
-  const rawUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL || "";
+  const usePatientKeys = isPatientRoom(roomName);
+  const apiKey = (usePatientKeys ? process.env.LIVEKIT_PATIENT_API_KEY : process.env.LIVEKIT_API_KEY || "").trim();
+  const apiSecret = (usePatientKeys ? process.env.LIVEKIT_PATIENT_API_SECRET : process.env.LIVEKIT_API_SECRET || "").trim();
+  const rawUrl =
+    usePatientKeys
+      ? process.env.NEXT_PUBLIC_LIVEKIT_PATIENT_URL || process.env.LIVEKIT_PATIENT_URL || ""
+      : process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL || "";
   const livekitUrl = normalizeUrl(rawUrl);
 
   if (!apiKey || !apiSecret || !livekitUrl) {

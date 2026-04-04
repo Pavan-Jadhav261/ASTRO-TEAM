@@ -5,29 +5,33 @@ import { notifyTelegramHelpers } from "@/lib/telegram";
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const patientId = String(body.patientId || "").trim();
-  const reason = String(body.reason || "").trim() || "Emergency request";
-  const location = String(body.location || "").trim();
-  const symptoms = String(body.symptoms || "").trim();
-  const summary = String(body.summary || "").trim();
-  const createdBy = String(body.createdBy || "self").trim();
+  const reason = String(body.reason || "").trim() || "Emergency alert";
 
   if (!patientId) {
     return NextResponse.json({ error: "Missing patientId." }, { status: 400 });
   }
 
   try {
-    const patient = await prisma.patient.findUnique({ where: { id: patientId } });
+    let location = "";
+    const sub = await prisma.notificationSubscription.findFirst({
+      where: { patient_id: patientId },
+      orderBy: { updated_at: "desc" },
+    });
+    if (sub?.latitude != null && sub?.longitude != null) {
+      location = `${sub.latitude}, ${sub.longitude}`;
+    }
+
     const alert = await prisma.emergencyAlert.create({
       data: {
         patient_id: patientId,
         reason,
+        summary: reason,
         location: location || null,
-        symptoms: symptoms || null,
-        summary: summary || null,
-        created_by: createdBy || null,
+        created_by: "agent",
       },
     });
 
+    const patient = await prisma.patient.findUnique({ where: { id: patientId } });
     await notifyTelegramHelpers(
       patientId,
       `🚨 Emergency alert for ${patient?.name || "patient"}. Reason: ${reason}${
@@ -44,11 +48,16 @@ export async function POST(request: Request) {
           latitude: Number(location.split(",")[0]),
           longitude: Number(location.split(",")[1]),
           title: "Emergency nearby",
-          message: "A nearby emergency has been reported.",
+          message: reason,
         }),
       }).catch(() => null);
     }
-    return NextResponse.json({ success: true, alertId: alert.id });
+
+    return NextResponse.json({
+      success: true,
+      alertId: alert.id,
+      mapLink: location ? `https://www.google.com/maps?q=${location}` : "",
+    });
   } catch {
     return NextResponse.json({ error: "Failed to create alert." }, { status: 500 });
   }

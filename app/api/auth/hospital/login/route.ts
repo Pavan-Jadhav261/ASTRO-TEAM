@@ -1,23 +1,24 @@
 import { NextResponse } from "next/server";
 import { signToken } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { verifyPassword } from "@/lib/password";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const hospitalId = String(body.hospitalId || "").trim();
   const password = String(body.password || "").trim();
 
-  const expectedId = process.env.HOSPITAL_AUTH_ID || "";
-  const expectedPassword = process.env.HOSPITAL_AUTH_PASSWORD || "";
-
   if (!hospitalId || !password) {
     return NextResponse.json({ error: "Missing credentials." }, { status: 400 });
   }
 
-  if (!expectedId || !expectedPassword) {
-    return NextResponse.json({ error: "Hospital credentials not configured." }, { status: 500 });
+  const hospital = await prisma.hospital.findUnique({
+    where: { hospital_id: hospitalId },
+  });
+  if (!hospital) {
+    return NextResponse.json({ error: "Hospital not found.", code: "NOT_FOUND" }, { status: 404 });
   }
-
-  if (hospitalId !== expectedId || password !== expectedPassword) {
+  if (!verifyPassword(password, hospital.password_hash)) {
     return NextResponse.json({ error: "Invalid hospital credentials." }, { status: 401 });
   }
 

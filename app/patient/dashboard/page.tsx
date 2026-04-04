@@ -57,12 +57,6 @@ export default function PatientDashboardPage() {
   const [medicineStatus, setMedicineStatus] = useState("");
   const [priceResults, setPriceResults] = useState<any[]>([]);
   const [medicineLabel, setMedicineLabel] = useState("");
-  const [voiceState, setVoiceState] = useState<"idle" | "recording" | "processing">("idle");
-  const [voiceReply, setVoiceReply] = useState("");
-  const [voiceVisit, setVoiceVisit] = useState<any>(null);
-  const [voiceSummaries, setVoiceSummaries] = useState<any[]>([]);
-  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
-  const voiceChunksRef = useRef<Blob[]>([]);
   const [emergencyOtherState, setEmergencyOtherState] = useState<"idle" | "recording" | "processing">("idle");
   const [emergencyOtherStatus, setEmergencyOtherStatus] = useState("");
   const emergencyRecorderRef = useRef<MediaRecorder | null>(null);
@@ -172,61 +166,6 @@ export default function PatientDashboardPage() {
       setEmergencyError(err?.message || "Failed to send alert.");
       setEmergencyStatus(null);
     }
-  };
-
-  const startVoiceAgent = async () => {
-    setVoiceReply("");
-    setVoiceVisit(null);
-    setVoiceSummaries([]);
-    try {
-      const patientId = localStorage.getItem("abha_patient_id") || "";
-      if (!patientId) throw new Error("Patient profile missing.");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      voiceRecorderRef.current = recorder;
-      voiceChunksRef.current = [];
-      setVoiceState("recording");
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          voiceChunksRef.current.push(event.data);
-        }
-      };
-
-      recorder.onstop = async () => {
-        setVoiceState("processing");
-        try {
-          const audioBlob = new Blob(voiceChunksRef.current, { type: "audio/webm" });
-          const formData = new FormData();
-          formData.append("audio", audioBlob, "patient-voice.webm");
-          formData.append("patientId", patientId);
-
-          const response = await fetch("/api/patient/voice-agent", {
-            method: "POST",
-            body: formData,
-          });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || "Voice agent failed.");
-          setVoiceReply(data.reply || "");
-          setVoiceVisit(data.visit || null);
-          setVoiceSummaries(data.summaries || []);
-        } catch (err: any) {
-          setVoiceReply(err?.message || "Voice agent failed.");
-        } finally {
-          setVoiceState("idle");
-        }
-      };
-
-      recorder.start();
-    } catch (err: any) {
-      setVoiceReply(err?.message || "Voice agent unavailable.");
-      setVoiceState("idle");
-    }
-  };
-
-  const stopVoiceAgent = () => {
-    voiceRecorderRef.current?.stop();
-    voiceRecorderRef.current?.stream.getTracks().forEach((track) => track.stop());
   };
 
   const startEmergencyOther = async () => {
@@ -568,31 +507,12 @@ export default function PatientDashboardPage() {
               <p className="text-sm text-emerald-200/80">
                 Speak to book visits or ask about recent summaries.
               </p>
-              {voiceState !== "recording" ? (
-                <Button onClick={startVoiceAgent} className="w-full" variant="secondary">
+              <Link href="/patient/voice-agent">
+                <Button className="w-full" variant="secondary">
                   <Mic size={16} />
-                  {voiceState === "processing" ? "Processing..." : "Start Voice Agent"}
+                  Open Voice Agent
                 </Button>
-              ) : (
-                <Button onClick={stopVoiceAgent} className="w-full" variant="secondary">
-                  Stop Recording
-                </Button>
-              )}
-              {voiceReply && (
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
-                  {voiceReply}
-                </div>
-              )}
-              {voiceVisit && (
-                <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
-                  Token created: <span className="font-mono">{voiceVisit.tokenNumber}</span> - {voiceVisit.department}
-                </div>
-              )}
-              {voiceSummaries.length > 0 && (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-100">
-                  Latest summary: {voiceSummaries[0]?.summary || "Summary available."}
-                </div>
-              )}
+              </Link>
             </CardContent>
           </Card>
 

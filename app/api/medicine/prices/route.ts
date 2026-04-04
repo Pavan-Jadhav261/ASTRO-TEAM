@@ -4,7 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GOOGLE_API_KEY || "";
+  const apiKey = process.env.GOOGLE_MED_PRICE_API_KEY || "";
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 
   if (!apiKey) {

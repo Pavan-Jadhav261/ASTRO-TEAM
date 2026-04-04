@@ -121,9 +121,17 @@ export default function PatientProfilePage() {
                       <Users size={14} />
                     </div>
                     <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-xs">
-                      {(profile?.guardians || []).length === 0
+                      {(profile?.helpers || []).length === 0
                         ? "No linked helpers yet."
-                        : (profile.guardians || []).join(", ")}
+                        : (profile.helpers || [])
+                            .map((helper: any) =>
+                              helper.username
+                                ? `@${helper.username}`
+                                : helper.first_name
+                                  ? helper.first_name
+                                  : helper.chat_id
+                            )
+                            .join(", ")}
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Privacy Settings</span>
@@ -218,10 +226,12 @@ export default function PatientProfilePage() {
               </Accordion>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <Button variant="secondary" className="w-full">
-                  <Mic size={16} />
-                  Voice Agent
-                </Button>
+                <Link href="/patient/voice-agent">
+                  <Button variant="secondary" className="w-full">
+                    <Mic size={16} />
+                    Voice Agent
+                  </Button>
+                </Link>
                 <Link href="/patient/summaries">
                   <Button className="w-full">Previous Summaries</Button>
                 </Link>

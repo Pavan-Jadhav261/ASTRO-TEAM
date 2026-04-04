@@ -8,6 +8,10 @@ function normalizeHost(rawUrl: string) {
   return rawUrl;
 }
 
+function isPatientRoom(roomName: string) {
+  return roomName.startsWith("elderly-assistant-") || roomName.startsWith("patient-");
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -18,9 +22,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "roomName is required" }, { status: 400 });
     }
 
-    const apiKey = process.env.LIVEKIT_API_KEY;
-    const apiSecret = process.env.LIVEKIT_API_SECRET;
-    const rawUrl = process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL;
+    const usePatientKeys = isPatientRoom(roomName);
+    const apiKey = usePatientKeys ? process.env.LIVEKIT_PATIENT_API_KEY : process.env.LIVEKIT_API_KEY;
+    const apiSecret = usePatientKeys ? process.env.LIVEKIT_PATIENT_API_SECRET : process.env.LIVEKIT_API_SECRET;
+    const rawUrl = usePatientKeys
+      ? process.env.LIVEKIT_PATIENT_URL || process.env.NEXT_PUBLIC_LIVEKIT_PATIENT_URL
+      : process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL;
     const agentName = requestedAgentName || process.env.LIVEKIT_AGENT_NAME || "hospital-agent";
 
     if (!apiKey || !apiSecret || !rawUrl) {
