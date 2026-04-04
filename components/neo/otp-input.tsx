@@ -4,7 +4,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-export function OtpInput({ length = 6 }: { length?: number }) {
+export function OtpInput({
+  length = 6,
+  onChange,
+}: {
+  length?: number;
+  onChange?: (value: string) => void;
+}) {
   const reduceMotion = useReducedMotion();
   const [values, setValues] = useState<string[]>(
     Array.from({ length }, () => "")
@@ -14,6 +20,9 @@ export function OtpInput({ length = 6 }: { length?: number }) {
 
   useEffect(() => {
     setCompleted(values.every((v) => v !== ""));
+    if (onChange) {
+      onChange(values.join(""));
+    }
   }, [values]);
 
   const handleChange = (index: number, value: string) => {

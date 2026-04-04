@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, QrCode, X, Sparkles } from "lucide-react";
+import { Camera, MapPin, QrCode, X, Sparkles } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { AbhaLogo } from "@/components/neo/abha-logo";
 import { ThemeToggle } from "@/components/neo/theme-toggle";
@@ -12,11 +13,82 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
+import { supabase } from "@/lib/supabase";
 
 const ease = [0.22, 1, 0.36, 1];
 
 export default function DoctorDashboardPage() {
   const [open, setOpen] = useState(false);
+  const [scanValue, setScanValue] = useState("");
+  const [emergency, setEmergency] = useState<any>(null);
+  const [emergencyPatient, setEmergencyPatient] = useState<any>(null);
+  const router = useRouter();
+
+  const handleScan = () => {
+    try {
+      const parsed = JSON.parse(scanValue);
+      if (parsed.visitId) {
+        router.push(`/doctor/consult/${parsed.visitId}`);
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    if (scanValue.trim()) {
+      router.push(`/doctor/consult/${scanValue.trim()}`);
+    }
+  };
+
+  const useLatest = async () => {
+    const response = await fetch("/api/opd/latest");
+    if (!response.ok) return;
+    const data = await response.json();
+    if (data.visitId) router.push(`/doctor/consult/${data.visitId}`);
+  };
+
+  useEffect(() => {
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let channel: any;
+
+    const fetchPatient = async (patientId: string) => {
+      const res = await fetch(`/api/doctor/patient/${patientId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setEmergencyPatient(data);
+    };
+
+    if (supabase) {
+      channel = supabase
+        .channel("emergency-alerts")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "emergency_alerts" },
+          (payload) => {
+            setEmergency(payload.new);
+            if (payload.new?.patient_id) {
+              fetchPatient(payload.new.patient_id);
+            }
+          }
+        )
+        .subscribe();
+    } else {
+      pollTimer = setInterval(async () => {
+        const res = await fetch("/api/emergency/latest");
+        if (!res.ok) return;
+        const data = await res.json();
+        setEmergency(data);
+        if (data?.patient_id) {
+          fetchPatient(data.patient_id);
+        }
+      }, 6000);
+    }
+
+    return () => {
+      if (pollTimer) clearInterval(pollTimer);
+      if (channel) supabase?.removeChannel(channel);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen abha-mesh neo-bg px-6 py-8">
@@ -27,7 +99,7 @@ export default function DoctorDashboardPage() {
             <Avatar>
               <AvatarFallback>AS</AvatarFallback>
             </Avatar>
-            Dr. Arjun Sen · Cardiology
+                        Dr. Arjun Sen - Cardiology
           </div>
           <ThemeToggle />
           <Link href="/login/doctor" className="text-xs text-[color:var(--text-secondary)]">
@@ -41,12 +113,12 @@ export default function DoctorDashboardPage() {
           <div>
             <h1 className="text-3xl font-semibold">Doctor Command Center</h1>
             <p className="mt-2 text-[color:var(--text-secondary)]">
-              AI agent (RAG‑trained) is ready to assist with patient insights.
+                            AI agent (RAG-trained) is ready to assist with patient insights.
             </p>
           </div>
           <Button size="lg">
             <Sparkles size={16} />
-            AI Agent (RAG)
+                          AI agent (RAG-trained) is ready to assist with patient insights.
           </Button>
         </div>
 
@@ -86,6 +158,25 @@ export default function DoctorDashboardPage() {
             </div>
           </TabsContent>
         </Tabs>
+
+        <Card className="neo-card">
+          <CardHeader>
+            <CardTitle>Scan Patient Token</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Input
+              placeholder="Paste QR payload or visit ID"
+              value={scanValue}
+              onChange={(event) => setScanValue(event.target.value)}
+            />
+            <div className="flex flex-wrap gap-3">
+              <Button onClick={handleScan}>Open Visit</Button>
+              <Button variant="secondary" onClick={useLatest}>
+                Use Latest Token
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="text-center">
           <h2 className="text-2xl font-semibold">Scan Patient Token</h2>
@@ -149,6 +240,63 @@ export default function DoctorDashboardPage() {
               </div>
               <Button className="mt-6 w-full">Simulate Scan</Button>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {emergency && (
+          <motion.div
+            className="fixed bottom-6 right-6 z-50 w-[92%] max-w-sm"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            drag
+            dragMomentum={false}
+          >
+            <div className="rounded-3xl border border-red-500/40 bg-[color:var(--surface)] p-4 shadow-2xl">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold text-red-300">Emergency Alert</div>
+                <button
+                  onClick={() => {
+                    setEmergency(null);
+                    setEmergencyPatient(null);
+                  }}
+                  className="rounded-full border border-[color:var(--border)] p-1"
+                  aria-label="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="mt-3 text-sm text-[color:var(--text-secondary)]">
+                {emergency.reason || "Urgent assistance requested."}
+              </div>
+              {emergencyPatient && (
+                <div className="mt-3 rounded-2xl border border-[color:var(--border)] bg-[color:var(--elevated)] p-3 text-xs">
+                  <div className="text-sm font-semibold text-[color:var(--text-primary)]">
+                    {emergencyPatient.name || "Patient"} ({emergencyPatient.age || "--"})
+                  </div>
+                  <div className="mt-1 text-[color:var(--text-secondary)]">
+                    Phone: {emergencyPatient.phone || "Unknown"}
+                  </div>
+                  <div className="mt-2 text-[color:var(--text-secondary)]">
+                    Latest summary: {emergencyPatient.summaries?.[0]?.summary || "No summary available."}
+                  </div>
+                </div>
+              )}
+              {emergency.location && (
+                <div className="mt-3 flex items-center gap-2 text-xs text-[color:var(--text-secondary)]">
+                  <MapPin size={12} />
+                  {emergency.location}
+                </div>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm">Open Patient</Button>
+                <Button size="sm" variant="secondary">
+                  Acknowledge
+                </Button>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

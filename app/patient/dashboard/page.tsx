@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import {
   Calendar,
   ClipboardList,
@@ -27,13 +28,67 @@ import { Input } from "@/components/ui/input";
 const ease = [0.22, 1, 0.36, 1];
 
 const quickActions = [
-  { label: "Book Visit", icon: Calendar },
+  { label: "Book Visit", icon: Calendar, href: "/patient/book-visit" },
   { label: "View Prescriptions", icon: Pill },
   { label: "My Records", icon: ClipboardList },
   { label: "Emergency", icon: HeartPulse, danger: true },
 ];
 
 export default function PatientDashboardPage() {
+  const [emergencyStatus, setEmergencyStatus] = useState<string | null>(null);
+  const [emergencyError, setEmergencyError] = useState<string | null>(null);
+  const [patient, setPatient] = useState<any>(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+
+  useEffect(() => {
+    const patientId = localStorage.getItem("abha_patient_id") || "";
+    if (!patientId) {
+      setLoadingProfile(false);
+      return;
+    }
+    fetch(`/api/patient/summary?patientId=${patientId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setPatient(data))
+      .catch(() => setPatient(null))
+      .finally(() => setLoadingProfile(false));
+  }, []);
+
+  const handleEmergencySelf = async () => {
+    setEmergencyStatus("Sending alert...");
+    setEmergencyError(null);
+    try {
+      const patientId = localStorage.getItem("abha_patient_id") || "";
+      if (!patientId) throw new Error("Patient profile missing.");
+
+      const summaryRes = await fetch(`/api/patient/summary?patientId=${patientId}`);
+      const summaryData = summaryRes.ok ? await summaryRes.json() : null;
+
+      const location = await new Promise<string>((resolve) => {
+        if (!navigator.geolocation) return resolve("");
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`),
+          () => resolve("")
+        );
+      });
+
+      const response = await fetch("/api/emergency/raise", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientId,
+          reason: summaryData?.summaries?.[0]?.summary || "Emergency requested by patient.",
+          location,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to send alert.");
+      setEmergencyStatus("Emergency alert sent to doctor.");
+    } catch (err: any) {
+      setEmergencyError(err?.message || "Failed to send alert.");
+      setEmergencyStatus(null);
+    }
+  };
+
   return (
     <div className="min-h-screen abha-mesh neo-bg px-6 py-6 pb-24">
       <header className="mx-auto flex w-full max-w-4xl items-center justify-between">
@@ -49,7 +104,11 @@ export default function PatientDashboardPage() {
       <main className="mx-auto mt-6 flex w-full max-w-4xl flex-col gap-6">
         <div>
           <p className="text-sm text-[color:var(--text-secondary)]">
-            Namaste, Ayesha ??
+            {loadingProfile
+              ? "Loading profile..."
+              : patient?.name
+                ? `Namaste, ${patient.name}`
+                : "Welcome to ABHA+"}
           </p>
           <h1 className="text-2xl font-semibold">Your Health Hub</h1>
         </div>
@@ -61,11 +120,15 @@ export default function PatientDashboardPage() {
           <CardContent className="flex flex-col gap-3 text-sm text-[color:var(--text-secondary)]">
             <div className="flex items-center justify-between">
               <span>Recent Visit</span>
-              <span className="text-[color:var(--text-primary)]">12 Feb 2026</span>
+              <span className="text-[color:var(--text-primary)]">
+                {patient?.visits?.[0]?.created_at
+                  ? new Date(patient.visits[0].created_at).toLocaleDateString()
+                  : "No visits yet"}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span>Next Appointment</span>
-              <span className="text-[color:var(--text-primary)]">18 Mar 2026</span>
+              <span className="text-[color:var(--text-primary)]">Not scheduled</span>
             </div>
             <Skeleton className="mt-2 h-3 w-2/3" />
           </CardContent>
@@ -108,7 +171,9 @@ export default function PatientDashboardPage() {
                         </DialogDescription>
                       </DialogHeader>
                       <div className="grid gap-3">
-                        <Button size="lg">Emergency for Myself</Button>
+                        <Button size="lg" onClick={handleEmergencySelf}>
+                          Emergency for Myself
+                        </Button>
                         <Card className="neo-card">
                           <CardHeader>
                             <CardTitle className="text-base">Emergency for Others</CardTitle>
@@ -121,12 +186,38 @@ export default function PatientDashboardPage() {
                             <Button variant="secondary">Stop Recording</Button>
                           </CardContent>
                         </Card>
+                        {emergencyStatus && (
+                          <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--text-secondary)]">
+                            {emergencyStatus}
+                          </div>
+                        )}
+                        {emergencyError && (
+                          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                            {emergencyError}
+                          </div>
+                        )}
                       </div>
                       <DialogFooter>
                         <Button variant="secondary">Close</Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                ) : action.href ? (
+                  <Link href={action.href}>
+                    <Card className="neo-card">
+                      <CardContent className="flex items-center gap-3 py-5">
+                        <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[color:var(--elevated)]">
+                          <Icon size={18} />
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium">{action.label}</p>
+                          <p className="text-xs text-[color:var(--text-secondary)]">
+                            Quick access
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
                 ) : (
                   <Card className="neo-card">
                     <CardContent className="flex items-center gap-3 py-5">

@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model OpdVisit {
+  visit_id     String   @id
+  token_number String   @unique
+  name         String
+  age          Int
+  gender       String
+  phone        String
+  symptoms     String
+  department   String
+  room_number  String?
+  patient_id   String?
+  created_at   DateTime @default(now())
+
+  patient      Patient? @relation(fields: [patient_id], references: [id])
+  prescriptions Prescription[]
+  summaries     DoctorSummary[]
+}
+
+model Patient {
+  id          String     @id @default(cuid())
+  phone       String     @unique
+  name        String?
+  age         Int?
+  gender      String?
+  created_at  DateTime   @default(now())
+  visits      OpdVisit[]
+  prescriptions Prescription[]
+  summaries   DoctorSummary[]
+  reports     PatientReport[]
+  emergencies EmergencyAlert[]
+}
+
+model Doctor {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  name          String
+  department    String
+  password_hash String
+  created_at    DateTime @default(now())
+}
+
+model Prescription {
+  id          String   @id @default(cuid())
+  patient_id  String
+  visit_id    String?
+  medicine    String
+  dosage      String?
+  frequency   String?
+  duration    String?
+  created_at  DateTime @default(now())
+
+  patient     Patient  @relation(fields: [patient_id], references: [id])
+  visit       OpdVisit? @relation(fields: [visit_id], references: [visit_id])
+}
+
+model DoctorSummary {
+  id          String   @id @default(cuid())
+  patient_id  String
+  visit_id    String?
+  summary     String
+  diagnosis   String?
+  plan        String?
+  created_at  DateTime @default(now())
+
+  patient     Patient  @relation(fields: [patient_id], references: [id])
+  visit       OpdVisit? @relation(fields: [visit_id], references: [visit_id])
+}
+
+model PatientReport {
+  id          String   @id @default(cuid())
+  patient_id  String
+  file_name   String
+  file_url    String?
+  created_at  DateTime @default(now())
+
+  patient     Patient  @relation(fields: [patient_id], references: [id])
+}
+
+model EmergencyAlert {
+  id          String   @id @default(cuid())
+  patient_id  String
+  reason      String
+  location    String?
+  status      String   @default("open")
+  created_at  DateTime @default(now())
+
+  patient     Patient  @relation(fields: [patient_id], references: [id])
+
+  @@map("emergency_alerts")
+}

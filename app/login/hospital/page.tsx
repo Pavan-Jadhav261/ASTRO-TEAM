@@ -1,8 +1,10 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useState } from "react";
 import { Building2, ShieldCheck, Waves } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { AbhaLogo } from "@/components/neo/abha-logo";
 import { ThemeToggle } from "@/components/neo/theme-toggle";
@@ -14,6 +16,31 @@ import { opdPills } from "@/components/neo/mock-data";
 const ease = [0.22, 1, 0.36, 1];
 
 export default function HospitalLoginPage() {
+  const [hospitalId, setHospitalId] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  const handleLogin = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const response = await fetch("/api/auth/hospital/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hospitalId, password }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Login failed.");
+      router.push("/hospital/opd");
+    } catch (err: any) {
+      setError(err?.message || "Login failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen abha-mesh neo-bg px-6 py-10">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between">
@@ -88,17 +115,32 @@ export default function HospitalLoginPage() {
                 <label className="text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
                   Hospital ID
                 </label>
-                <Input className="font-mono text-lg" placeholder="ABHA-GOV-0184" />
+                <Input
+                  className="font-mono text-lg"
+                  placeholder="ABHA-GOV-0184"
+                  value={hospitalId}
+                  onChange={(event) => setHospitalId(event.target.value)}
+                />
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-xs uppercase tracking-[0.2em] text-[color:var(--text-secondary)]">
                   Password
                 </label>
-                <Input type="password" placeholder="••••••••" />
+                <Input
+                  type="password"
+                  placeholder="********"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
               </div>
-              <Button size="lg" className="mt-2">
-                Enter OPD System
+              <Button size="lg" className="mt-2" onClick={handleLogin} disabled={loading}>
+                {loading ? "Signing in..." : "Enter OPD System"}
               </Button>
+              {error && (
+                <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+                  {error}
+                </div>
+              )}
               <p className="text-xs text-[color:var(--text-secondary)]">
                 Secure access is monitored and audited.
               </p>
