@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Calendar,
   ClipboardList,
@@ -13,6 +13,7 @@ import {
   Cpu,
   Pill,
   User,
+  Bell,
 } from "lucide-react";
 
 import { AbhaLogo } from "@/components/neo/abha-logo";
@@ -67,6 +68,99 @@ export default function PatientDashboardPage() {
   const telegramBot = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "";
   const helperLink = telegramBot && patientId ? `https://t.me/${telegramBot}?start=${patientId}` : "";
   const [helperLinkStatus, setHelperLinkStatus] = useState("");
+  const [reminders, setReminders] = useState<any[]>([]);
+
+  // Emergency alarm state
+  const [emergencyAlarmActive, setEmergencyAlarmActive] = useState(false);
+  const alarmAudioCtxRef = useRef<AudioContext | null>(null);
+  const alarmIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const alarmSpeechRef = useRef<boolean>(false);
+
+  const playBeep = useCallback((ctx: AudioContext) => {
+    try {
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = "square";
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start(ctx.currentTime);
+      oscillator.stop(ctx.currentTime + 0.5);
+    } catch {}
+  }, []);
+
+  const speakEmergency = useCallback(() => {
+    if (!alarmSpeechRef.current) return;
+    const utterance = new SpeechSynthesisUtterance("A person needs help");
+    utterance.rate = 1.1;
+    utterance.pitch = 1.2;
+    utterance.volume = 1;
+    utterance.onend = () => {
+      if (alarmSpeechRef.current) {
+        setTimeout(() => speakEmergency(), 200);
+      }
+    };
+    utterance.onerror = () => {
+      if (alarmSpeechRef.current) {
+        setTimeout(() => speakEmergency(), 500);
+      }
+    };
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const startEmergencyAlarm = useCallback(() => {
+    setEmergencyAlarmActive(true);
+    alarmSpeechRef.current = true;
+
+    // Start audio context for beep
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    alarmAudioCtxRef.current = ctx;
+
+    // Play beep every 2 seconds
+    playBeep(ctx);
+    const interval = setInterval(() => {
+      if (alarmSpeechRef.current) {
+        playBeep(ctx);
+      }
+    }, 2000);
+    alarmIntervalRef.current = interval;
+
+    // Start speech loop
+    window.speechSynthesis.cancel();
+    speakEmergency();
+  }, [playBeep, speakEmergency]);
+
+  const stopEmergencyAlarm = useCallback(() => {
+    setEmergencyAlarmActive(false);
+    alarmSpeechRef.current = false;
+
+    // Stop speech
+    window.speechSynthesis.cancel();
+
+    // Stop beep interval
+    if (alarmIntervalRef.current) {
+      clearInterval(alarmIntervalRef.current);
+      alarmIntervalRef.current = null;
+    }
+
+    // Close audio context
+    if (alarmAudioCtxRef.current) {
+      alarmAudioCtxRef.current.close().catch(() => {});
+      alarmAudioCtxRef.current = null;
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      alarmSpeechRef.current = false;
+      window.speechSynthesis.cancel();
+      if (alarmIntervalRef.current) clearInterval(alarmIntervalRef.current);
+      if (alarmAudioCtxRef.current) alarmAudioCtxRef.current.close().catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     const loadSummary = async () => {
@@ -88,6 +182,21 @@ export default function PatientDashboardPage() {
     };
 
     loadSummary();
+  }, []);
+
+  useEffect(() => {
+    const loadReminders = async () => {
+      const patientId = localStorage.getItem("abha_patient_id") || "";
+      if (!patientId) return;
+      try {
+        const res = await fetch(`/api/patient/reminders?patientId=${patientId}`);
+        const data = res.ok ? await res.json() : [];
+        setReminders(data);
+      } catch {
+        setReminders([]);
+      }
+    };
+    loadReminders();
   }, []);
 
   useEffect(() => {
@@ -130,6 +239,10 @@ export default function PatientDashboardPage() {
   const handleEmergencySelf = async () => {
     setEmergencyStatus("Sending alert...");
     setEmergencyError(null);
+
+    // Start the alarm immediately
+    startEmergencyAlarm();
+
     try {
       const patientId = localStorage.getItem("abha_patient_id") || "";
       if (!patientId) throw new Error("Patient profile missing.");
@@ -395,6 +508,60 @@ export default function PatientDashboardPage() {
       <header className="mx-auto flex w-full max-w-4xl items-center justify-between">
         <AbhaLogo />
         <div className="flex items-center gap-3">
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="relative h-10 w-10 p-0 text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]">
+                <Bell size={20} />
+                {reminders.length > 0 && (
+                  <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                    {reminders.length}
+                  </span>
+                )}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Medication Reminders</DialogTitle>
+                <DialogDescription>
+                  Your active medicine schedule.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col gap-3 mt-2">
+                {reminders.length === 0 ? (
+                  <p className="text-sm text-[color:var(--text-secondary)]">No active reminders.</p>
+                ) : (
+                  reminders.map((reminder) => (
+                    <div key={reminder.id} className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Pill size={16} className="text-[color:var(--accent-secondary)]" />
+                        <span className="font-semibold text-[color:var(--text-primary)]">{reminder.medicine}</span>
+                      </div>
+                      <p className="text-xs text-[color:var(--text-secondary)]">
+                        Dosage: {reminder.dosage || "Not specified"} | Frequency: {reminder.frequency || "Not specified"}
+                      </p>
+                      {reminder.time_slots && reminder.time_slots.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {reminder.time_slots.map((time: string, idx: number) => (
+                            <span key={idx} className="rounded-md bg-[color:var(--elevated)] px-2 py-1 text-xs text-[color:var(--text-primary)]">
+                              ⏰ {time}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {reminder.end_date && (
+                        <p className="mt-2 text-xs text-emerald-400/80">
+                          Scheduled until: {new Date(reminder.end_date).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="secondary">Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <ThemeToggle />
           <Link href="/patient/profile">
             <Button variant="ghost" size="sm">
@@ -585,6 +752,32 @@ export default function PatientDashboardPage() {
                         <Button size="lg" onClick={handleEmergencySelf}>
                           Emergency for Myself
                         </Button>
+                        {emergencyAlarmActive && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="flex flex-col items-center gap-3 rounded-xl border-2 border-red-500 bg-red-500/10 px-4 py-4"
+                          >
+                            <motion.div
+                              animate={{ scale: [1, 1.15, 1] }}
+                              transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
+                              className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500/30"
+                            >
+                              <HeartPulse size={28} className="text-red-400" />
+                            </motion.div>
+                            <p className="text-center text-sm font-semibold text-red-300">
+                              🔊 Emergency alarm is active...
+                            </p>
+                            <Button
+                              size="lg"
+                              variant="secondary"
+                              className="border-2 border-red-500/60 bg-red-500/20 text-red-200 hover:bg-red-500/40"
+                              onClick={stopEmergencyAlarm}
+                            >
+                              ⬛ Stop Alarm
+                            </Button>
+                          </motion.div>
+                        )}
                         <Card className="neo-card">
                           <CardHeader>
                             <CardTitle className="text-base">Emergency for Others</CardTitle>
@@ -621,7 +814,7 @@ export default function PatientDashboardPage() {
                         )}
                       </div>
                       <DialogFooter>
-                        <Button variant="secondary">Close</Button>
+                        <Button variant="secondary" onClick={() => { if (emergencyAlarmActive) stopEmergencyAlarm(); }}>Close</Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>

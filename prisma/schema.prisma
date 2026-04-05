@@ -40,6 +40,7 @@ model Patient {
   reports     PatientReport[]
   emergencies EmergencyAlert[]
   helpers     PatientHelper[]
+  reminders   MedicineReminder[]
 }
 
 model Doctor {
@@ -72,6 +73,7 @@ model Prescription {
 
   patient     Patient  @relation(fields: [patient_id], references: [id])
   visit       OpdVisit? @relation(fields: [visit_id], references: [visit_id])
+  reminders   MedicineReminder[]
 }
 
 model DoctorSummary {
@@ -138,4 +140,25 @@ model PatientHelper {
   created_at DateTime @default(now())
 
   patient    Patient  @relation(fields: [patient_id], references: [id])
+}
+
+model MedicineReminder {
+  id              String   @id @default(cuid())
+  patient_id      String
+  prescription_id String?
+  medicine        String
+  dosage          String?
+  frequency       String?
+  times_per_day   Int      @default(1)
+  time_slots      String[] @default([])
+  start_date      DateTime @default(now())
+  end_date        DateTime?
+  duration_days   Int?
+  active          Boolean  @default(true)
+  created_at      DateTime @default(now())
+
+  patient         Patient  @relation(fields: [patient_id], references: [id])
+  prescription    Prescription? @relation(fields: [prescription_id], references: [id])
+
+  @@map("medicine_reminders")
 }

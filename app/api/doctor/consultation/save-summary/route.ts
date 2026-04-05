@@ -60,16 +60,65 @@ export async function POST(request: Request) {
     });
 
     if (prescriptions.length > 0) {
-      await prisma.prescription.createMany({
-        data: prescriptions.map((rx: any) => ({
-          patient_id: patientId,
-          visit_id: visitId || null,
-          medicine: String(rx.medicine || rx.medicineName || "Medicine"),
-          dosage: rx.dosage ? String(rx.dosage) : null,
-          frequency: rx.frequency ? String(rx.frequency) : null,
-          duration: rx.duration ? String(rx.duration) : null,
-        })),
-      });
+      for (const rx of prescriptions) {
+        const freqText = (rx.frequency || "").toLowerCase();
+        let timesPerDay = 1;
+        let timeSlots = ["09:00"];
+
+        if (freqText.includes("2") || freqText.includes("twice")) {
+          timesPerDay = 2;
+          timeSlots = ["09:00", "21:00"];
+        } else if (freqText.includes("3") || freqText.includes("thrice") || freqText.includes("tds")) {
+          timesPerDay = 3;
+          timeSlots = ["09:00", "14:00", "21:00"];
+        } else if (freqText.includes("4")) {
+          timesPerDay = 4;
+          timeSlots = ["08:00", "12:00", "16:00", "20:00"];
+        }
+
+        const durText = (rx.duration || "").toLowerCase();
+        let durationDays: number | null = null;
+        let endDate: Date | null = null;
+        const daysMatch = durText.match(/(\d+)\s*(day|week|month)/);
+        if (daysMatch) {
+          const num = parseInt(daysMatch[1], 10);
+          const unit = daysMatch[2];
+          if (unit === "day") durationDays = num;
+          else if (unit === "week") durationDays = num * 7;
+          else if (unit === "month") durationDays = num * 30;
+
+          if (durationDays) {
+            endDate = new Date();
+            endDate.setDate(endDate.getDate() + durationDays);
+          }
+        }
+
+        const savedRx = await prisma.prescription.create({
+          data: {
+            patient_id: patientId,
+            visit_id: visitId || null,
+            medicine: String(rx.medicine || rx.medicineName || "Medicine"),
+            dosage: rx.dosage ? String(rx.dosage) : null,
+            frequency: rx.frequency ? String(rx.frequency) : null,
+            duration: rx.duration ? String(rx.duration) : null,
+          },
+        });
+
+        await prisma.medicineReminder.create({
+          data: {
+            patient_id: patientId,
+            prescription_id: savedRx.id,
+            medicine: savedRx.medicine,
+            dosage: savedRx.dosage,
+            frequency: savedRx.frequency,
+            times_per_day: timesPerDay,
+            time_slots: timeSlots,
+            duration_days: durationDays,
+            end_date: endDate,
+            active: true,
+          },
+        });
+      }
     }
 
     if (allergies.length > 0) {
