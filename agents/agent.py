@@ -50,12 +50,9 @@ logger = logging.getLogger('hospital-agent')
 class HospitalAssistant(Agent):
     def __init__(self, room: rtc.Room):
         self.room = room
-        self.pending_details: dict | None = None
-        self.otp_verified = False
-        self.registration_payload: dict | None = None
         super().__init__(
             instructions="""
-You are a strict multilingual hospital OPD intake agent for SAHAYA AI Hospital.
+You are a strict multilingual hospital OPD intake agent for ABHA+ AI Hospital.
 
 Language behavior:
 - Detect the user's language from speech and continue in that language automatically.
@@ -72,22 +69,12 @@ Required question order:
 Fixed flow:
 1. Greet briefly.
 2. Collect the required fields in the exact order above.
-3. When all five fields are known, choose the best department from symptoms and call send_registration_otp.
-4. After OTP is sent, ask the user to say the OTP.
-5. Call verify_registration_otp with the spoken code.
-6. If OTP is wrong, ask once more. If still wrong, offer resend OTP or phone number change.
-7. When OTP is verified, the browser will show the details popup. Ask the user if the details are correct.
-8. If the user corrects name, age, gender, or symptoms after OTP, update the details but do not resend OTP.
-9. Only resend OTP if the phone number changes or the user explicitly asks to resend OTP.
-10. If the user says the details are correct, call confirm_registration_and_prepare_payment.
-11. Then tell the user payment is opening on screen.
+3. When all five fields are known, choose the best department from symptoms and call create_visit_token.
+4. After the token is created, confirm the token number, room, and say the QR code is shown on screen.
 
 Tool calling rules:
-- You must use tools to perform OTP actions. Never claim an OTP was sent or verified unless the tool returns success.
-- As soon as all five fields are collected, you MUST call send_registration_otp exactly once.
-- If the user provides an OTP, immediately call verify_registration_otp with the spoken digits.
-- If the user asks to resend OTP or changes phone number, call resend_registration_otp.
-- If the user confirms details are correct after OTP verification, call confirm_registration_and_prepare_payment.
+- You must use tools to create the visit token. Never claim a token exists unless the tool returns success.
+- As soon as all five fields are collected, you MUST call create_visit_token exactly once.
 
 Rules:
 - Ask only one missing field at a time.
@@ -95,9 +82,6 @@ Rules:
 - Do not discuss unrelated topics.
 - Politely refuse non-registration conversation.
 - Do not skip the name question. Name must always be collected first.
-- Do not resend OTP for name, age, gender, or symptom changes.
-- Do not ask the user to type OTP. The user will speak it.
-- Do not confirm registration until the user says the details are correct.
 - Do not make up tool outcomes. Follow tool responses verbatim.
 
 Available departments:
@@ -130,6 +114,37 @@ Available departments:
         if last_error:
             logger.error('All requests failed for %s: %s', path, last_error)
         return None
+
+    @function_tool(description='Create a visit token directly after collecting patient details.')
+    async def create_visit_token(
+        self,
+        ctx: RunContext,
+        name: str,
+        age: int,
+        gender: str,
+        phone_number: str,
+        symptoms: str,
+        department: str = 'General Medicine',
+    ) -> str:
+        details = {
+            'name': name.strip(),
+            'age': age,
+            'gender': gender.strip(),
+            'phone': phone_number.strip(),
+            'symptoms': symptoms.strip(),
+            'department': department.strip() or 'General Medicine',
+        }
+
+        response = self._post_json('/api/opd/voice-register', details, 20)
+        if not response or response.status_code != 200:
+            return 'I could not create the token yet. Please try again.'
+
+        payload = response.json()
+        await self._publish('confirmation_required', details)
+        await self._publish('registration_ready', payload)
+        token_number = payload.get('tokenNumber') or 'your token'
+        room_number = payload.get('roomNumber') or 'the counter'
+        return f"Your token is {token_number}. Please proceed to {room_number}. The QR code is on the screen."
 
 
 class ElderlyCareAssistant(Agent):
@@ -272,7 +287,7 @@ Fallback guidance:
 server = AgentServer()
 
 
-@server.rtc_session(agent_name=AGENT_NAME)
+@server.rtc_session()
 async def entrypoint(ctx: JobContext):
     logger.info('New session: %s', ctx.room.name)
     await ctx.connect()
@@ -290,10 +305,13 @@ async def entrypoint(ctx: JobContext):
         raise
 
     room_name = ctx.room.name or ''
-    is_elderly_room = room_name.startswith('elderly-assistant-')
-    patient_id = room_name.replace('elderly-assistant-', '').strip() or 'patient-001'
+    is_patient_room = room_name.startswith('elderly-assistant-') or room_name.startswith('patient-') or room_name.startswith('patient-assistant-')
+    patient_id = room_name.replace('elderly-assistant-', '').replace('patient-assistant-', '').replace('patient-', '').strip() or 'patient-001'
 
-    agent = ElderlyCareAssistant(room=ctx.room, patient_id=patient_id) if is_elderly_room else HospitalAssistant(room=ctx.room)
+    if participant.identity and participant.identity.startswith('patient-'):
+        is_patient_room = True
+
+    agent = ElderlyCareAssistant(room=ctx.room, patient_id=patient_id) if is_patient_room else HospitalAssistant(room=ctx.room)
     model = google.realtime.RealtimeModel(
         model=GOOGLE_REALTIME_MODEL,
         voice=GOOGLE_REALTIME_VOICE,
@@ -310,9 +328,9 @@ async def entrypoint(ctx: JobContext):
     )
 
     await session.start(room=ctx.room, agent=agent)
-    if is_elderly_room:
+    if is_patient_room:
         await session.generate_reply(
-            instructions='Greet the patient warmly, then offer to explain the latest doctor summary and medicines.'
+            instructions='Greet the patient warmly, fetch the latest doctor summary, and explain it in simple terms. Ask if they want home remedies or to book a visit.'
         )
     else:
         await session.generate_reply(

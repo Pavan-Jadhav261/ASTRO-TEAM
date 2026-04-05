@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -20,6 +20,13 @@ const annotations = [
 export default function DigitalTwinPage() {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const calloutRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [insights, setInsights] = useState<{
+    predictedOutcomes: string;
+    measuresToTake: string;
+    visitDoctor: string;
+  } | null>(null);
+  const [loadingInsights, setLoadingInsights] = useState(true);
+  const [insightError, setInsightError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -183,6 +190,30 @@ export default function DigitalTwinPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const loadInsights = async () => {
+      try {
+        setInsightError(null);
+        const patientId = localStorage.getItem("abha_patient_id") || "";
+        const res = await fetch("/api/patient/digital-twin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patientId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error || "Failed to load insights.");
+        }
+        setInsights(data.insights || null);
+      } catch (err: any) {
+        setInsightError(err?.message || "Failed to load insights.");
+      } finally {
+        setLoadingInsights(false);
+      }
+    };
+    loadInsights();
+  }, []);
+
   return (
     <div className="min-h-screen abha-mesh neo-bg px-6 py-6">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between">
@@ -237,7 +268,11 @@ export default function DigitalTwinPage() {
               <CardTitle>Predicted Outcomes</CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-[color:var(--text-secondary)] sm:text-sm">
-              Early warning signs suggest fatigue risk in 2 weeks if sleep quality dips below 6 hours.
+              {loadingInsights
+                ? "Analyzing your recent summaries..."
+                : insightError
+                  ? insightError
+                  : insights?.predictedOutcomes || "No predictions available yet."}
             </CardContent>
           </Card>
           <Card className="neo-card">
@@ -245,7 +280,11 @@ export default function DigitalTwinPage() {
               <CardTitle>Measures to Take</CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-[color:var(--text-secondary)] sm:text-sm">
-              Hydration, light cardio, and balanced meals recommended for the next 10 days.
+              {loadingInsights
+                ? "Preparing recommendations..."
+                : insightError
+                  ? "Unable to load recommendations."
+                  : insights?.measuresToTake || "No recommendations available yet."}
             </CardContent>
           </Card>
           <Card className="neo-card">
@@ -253,7 +292,11 @@ export default function DigitalTwinPage() {
               <CardTitle>When to Visit a Doctor</CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-[color:var(--text-secondary)] sm:text-sm">
-              Seek consultation if symptoms persist for more than 48 hours or breathing feels restricted.
+              {loadingInsights
+                ? "Summarizing triggers..."
+                : insightError
+                  ? "Unable to load doctor guidance."
+                  : insights?.visitDoctor || "No guidance available yet."}
             </CardContent>
           </Card>
         </div>

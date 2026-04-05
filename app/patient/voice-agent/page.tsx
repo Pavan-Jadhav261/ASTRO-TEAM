@@ -136,17 +136,6 @@ export default function PatientVoiceAgentPage() {
         throw new Error(payload?.error || "Failed to fetch LiveKit token");
       }
 
-      await fetch("/api/livekit/dispatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomName }),
-      }).then(async (res) => {
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data?.error || "Failed to dispatch LiveKit agent.");
-        }
-      });
-
       const room = new Room();
       roomRef.current = room;
 

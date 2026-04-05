@@ -147,12 +147,6 @@ export default function OpdKioskPage() {
         throw new Error(payload?.error || "Failed to fetch LiveKit token");
       }
 
-      await fetch("/api/livekit/dispatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomName }),
-      });
-
       const room = new Room();
       roomRef.current = room;
 
@@ -407,13 +401,13 @@ export default function OpdKioskPage() {
             {!registration && (
               <div className="flex items-center gap-2 text-xs text-[color:var(--text-secondary)]">
                 <User size={12} />
-                Waiting for OTP verification and confirmation
+                Waiting for patient details
               </div>
             )}
 
             <div className="flex items-center gap-2 text-xs text-[color:var(--text-secondary)]">
               <Phone size={12} />
-              OTP is captured by voice only
+              Token is generated after details are confirmed
             </div>
           </CardContent>
         </Card>
